@@ -17,7 +17,9 @@
     background:radial-gradient(1200px 700px at 70% -10%, #1b2030 0%, var(--bg) 55%);
     color:var(--ink); font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-text-size-adjust:100%;
+    touch-action:manipulation;                 /* no double-tap-to-zoom (pinch still works) */
   }
+  button, .hex{ -webkit-tap-highlight-color:transparent }   /* kill the square grey tap flash */
   a{color:var(--accent)}
   .wrap{max-width:960px; margin:0 auto; padding:14px 14px 20px; min-height:100dvh; display:flex; flex-direction:column}
   header.top{display:flex; align-items:center; gap:12px; margin-bottom:8px}
@@ -83,6 +85,10 @@
   .words-head .chev{transition:transform .18s ease}
   .words.open .words-head .chev{transform:rotate(180deg)}
   .words-body{padding:2px 14px 14px; max-height:24vh; overflow:auto}
+  .wordsort{display:flex; gap:6px; margin-bottom:10px}
+  .wordsort button{padding:5px 12px; border-radius:999px; background:transparent; border:1px solid var(--line);
+    font-size:12px; font-weight:700; color:var(--muted)}
+  .wordsort button.active{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
   .wordgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:4px 12px}
   .wordgrid span{padding:3px 2px; border-bottom:1px solid var(--line); text-transform:capitalize; font-size:14px}
   .wordgrid span.pan{color:var(--accent); font-weight:700}
@@ -108,7 +114,9 @@
     display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; text-transform:uppercase;
     cursor:pointer; transition:transform .08s ease, filter .1s}
   .hex:hover{filter:brightness(.94)}
-  .hex:active{transform:translate(-50%,-50%) scale(.9)}
+  /* press feedback is a filter on the clipped element, so it follows the
+     hexagon shape exactly — no square highlight box */
+  .hex:active{transform:translate(-50%,-50%) scale(.92); filter:brightness(.82)}
   .hex.center{background:var(--accent); color:var(--accent-ink)}
 
   /* ---- controls ---- */
@@ -161,6 +169,7 @@
       <div class="menu hidden" id="menu">
         <button id="btnShare" class="hidden">🔗 Invite / copy link</button>
         <button id="btnHandoff" class="hidden">📱 Continue on another device</button>
+        <button id="btnRename" class="hidden">✏️ Change name</button>
         <button id="btnNew" class="hidden">New puzzle</button>
         <button id="btnHelp">How to play</button>
       </div>
@@ -196,6 +205,10 @@
         <span class="chev">⌄</span>
       </button>
       <div class="words-body hidden" id="wordsBody">
+        <div class="wordsort" id="wordSort">
+          <button data-sort="az" class="active">A–Z</button>
+          <button data-sort="recent">Recent</button>
+        </div>
         <div class="wordgrid" id="wordGrid"></div>
       </div>
     </div>
@@ -240,6 +253,16 @@
   <input id="joinName" maxlength="20" placeholder="Your name" style="width:100%">
   <div style="text-align:right; margin-top:16px">
     <button id="joinGo" class="primary">Join game</button>
+  </div>
+</dialog>
+
+<!-- Change-name dialog -->
+<dialog id="nameDlg" class="dlg">
+  <h2 style="margin-top:0">Change your name</h2>
+  <input id="renameInput" maxlength="20" placeholder="Your name" style="width:100%">
+  <div style="text-align:right; margin-top:16px">
+    <button value="cancel" onclick="this.closest('dialog').close()" class="ghost">Cancel</button>
+    <button id="renameSave" class="primary">Save</button>
   </div>
 </dialog>
 
@@ -543,7 +566,8 @@ const G = {
   roomKey: '',        // localStorage key base for this board
   startedAt: 0,
   players: {},        // shared scoreboard {id:{name,score,words,updated,history}}
-  name: ''
+  name: '',
+  foundSort: (localStorage.getItem('hc_foundSort') || 'az')   // 'az' | 'recent'
 };
 
 function puzzleSignature(letters, center){
@@ -616,7 +640,9 @@ function renderFound(){
   if(G.found.length === 0){
     grid.innerHTML = '<span class="empty">No words yet — find one that uses the yellow center letter.</span>';
   }else{
-    [...G.found].sort().forEach(w=>{
+    // 'az' = alphabetical, 'recent' = order gotten (newest first)
+    const list = (G.foundSort === 'recent') ? [...G.found].reverse() : [...G.found].sort();
+    list.forEach(w=>{
       const s = document.createElement('span');
       const sc = wordScore(w, G.letters);
       if(sc.pangram) s.className='pan';
@@ -846,7 +872,7 @@ async function startGame(letters, center, roomId){
   document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
   $('#game').classList.remove('hidden');
-  ['#btnNew','#btnShare','#btnHandoff'].forEach(s=> $(s).classList.remove('hidden'));
+  ['#btnNew','#btnShare','#btnHandoff','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
   layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard();
 
@@ -997,6 +1023,31 @@ $('#wordsToggle').addEventListener('click', ()=>{
   $('#wordsBody').classList.toggle('hidden', !open);
   $('#wordsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
 });
+/* sort the found-words list */
+$$('#wordSort button').forEach(b=>{
+  b.classList.toggle('active', b.dataset.sort === G.foundSort);
+  b.addEventListener('click', ()=>{
+    G.foundSort = b.dataset.sort;
+    localStorage.setItem('hc_foundSort', G.foundSort);
+    $$('#wordSort button').forEach(x=> x.classList.toggle('active', x.dataset.sort === G.foundSort));
+    renderFound();
+  });
+});
+/* change display name */
+$('#btnRename').addEventListener('click', ()=>{
+  closeMenu();
+  $('#renameInput').value = G.name || '';
+  $('#nameDlg').showModal();
+});
+$('#renameSave').addEventListener('click', ()=>{
+  const nm = $('#renameInput').value.trim();
+  if(nm){
+    G.name = nm;
+    localStorage.setItem('hc_name', nm);
+    if(!$('#game').classList.contains('hidden')) pushScore();   // update board + cloud
+  }
+  $('#nameDlg').close();
+});
 
 /* score-strip chip -> full standings sheet */
 function openBoard(){ renderBoard(); renderNetNote(); $('#boardSheet').classList.remove('hidden'); }
@@ -1051,9 +1102,13 @@ let joinRoute = null;   // pending invite route while the join dialog is open
       for(const [id,p] of Object.entries(store)){ if(id!==PLAYER_ID) G.players[id]=p; }
     }catch(e){}
 
-    // A handoff link (&me) is us resuming on another device — no name prompt,
-    // just restore and continue. A plain invite link prompts for a name.
-    if(route.me){
+    // A handoff link (&me) is us resuming on another device — no name prompt.
+    // Also skip the prompt if THIS browser has already played this exact room
+    // (re-opening our own invite link) so we resume as ourselves, not a new
+    // player. A first-time invite link prompts for a name.
+    const prevHere = loadProgress(sig);
+    const rejoiningOwnRoom = prevHere && prevHere.name && route.room && prevHere.room === route.room;
+    if(route.me || rejoiningOwnRoom){
       startGame(route.letters, route.center, route.room);
     }else{
       joinRoute = route;
