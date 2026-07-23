@@ -154,6 +154,11 @@
   .setup .lettersgrid{display:flex; gap:8px; flex-wrap:wrap; margin:12px 0}
   .setup .lettersgrid input{width:52px; height:52px; text-align:center; font-size:22px; text-transform:uppercase; font-weight:800}
   .setup .lettersgrid input.center{border-color:var(--accent); box-shadow:0 0 0 2px rgba(247,218,33,.25)}
+  .resume-row{display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;
+    text-align:left; background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
+  .resume-row:hover{border-color:#3a4150}
+  .resume-row .rl-letters{font-weight:800; letter-spacing:3px; text-transform:uppercase}
+  .resume-row .rl-meta{color:var(--muted); font-size:13px; white-space:nowrap}
   .row2{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--muted)}
   .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#111521; border:1px solid var(--line);
@@ -180,6 +185,13 @@
       </div>
     </div>
   </header>
+
+  <!-- ============== RESUME (your saved boards) ============== -->
+  <section id="resume" class="card hidden" style="margin-bottom:14px">
+    <h2 style="margin:.2em 0">Resume a game</h2>
+    <p class="muted" style="margin-top:0">Boards you've played on this device — pick up where you left off.</p>
+    <div id="resumeList"></div>
+  </section>
 
   <!-- ================= SETUP ================= -->
   <section id="setup" class="card setup">
@@ -587,11 +599,24 @@ function puzzleSignature(letters, center){
 /* ---------- persistence of my own progress ---------- */
 function saveProgress(){
   const data = {name:G.name, found:G.found, score:G.score, startedAt:G.startedAt,
-                letters:G.letters, center:G.center, room:Net.room};
+                letters:G.letters, center:G.center, room:Net.room, updated:now()};
   try{ localStorage.setItem('hc_game_'+G.roomKey, JSON.stringify(data)); }catch(e){}
 }
 function loadProgress(roomKey){
   try{ return JSON.parse(localStorage.getItem('hc_game_'+roomKey) || 'null'); }catch(e){ return null; }
+}
+// Every board this browser has played (most-recently-updated first) so the
+// player can jump back to any of them from the home screen.
+function listRecentBoards(){
+  const out = [];
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    if(k && k.startsWith('hc_game_')){
+      try{ const d = JSON.parse(localStorage.getItem(k)); if(d && d.letters && d.center) out.push(d); }catch(e){}
+    }
+  }
+  out.sort((a,b)=> (b.updated||b.startedAt||0) - (a.updated||a.startedAt||0));
+  return out;
 }
 
 /* ============================================================
@@ -892,6 +917,7 @@ async function startGame(letters, center, roomId){
   // swap screens
   document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
+  $('#resume').classList.add('hidden');
   $('#game').classList.remove('hidden');
   ['#btnNew','#btnShare','#btnHandoff','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
@@ -1085,6 +1111,25 @@ $('#joinGo').addEventListener('click', ()=>{
   if(joinRoute){ const r = joinRoute; joinRoute = null; startGame(r.letters, r.center, r.room); }
 });
 
+/* resume list on the home screen */
+function renderResume(){
+  const boards = listRecentBoards();
+  const sec = $('#resume'), list = $('#resumeList');
+  if(!boards.length){ sec.classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+  list.innerHTML = '';
+  boards.slice(0,8).forEach(d=>{
+    const letters = (d.letters||[]).map(l => l===d.center
+      ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
+    const btn = document.createElement('button');
+    btn.className = 'resume-row';
+    btn.innerHTML = `<span class="rl-letters">${letters}</span>`+
+      `<span class="rl-meta">${d.score||0} pts · ${(d.found||[]).length} words · ${timeAgo(d.updated||d.startedAt)}</span>`;
+    btn.addEventListener('click', ()=> startGame(d.letters, d.center, d.room));
+    list.appendChild(btn);
+  });
+}
+
 /* live timer */
 setInterval(()=>{
   if($('#game').classList.contains('hidden') || !G.startedAt) return;
@@ -1099,6 +1144,7 @@ setInterval(()=>{ Net.refresh(); }, 3500);
 let joinRoute = null;   // pending invite route while the join dialog is open
 (function init(){
   buildSetupGrid();
+  renderResume();
   const savedName = localStorage.getItem('hc_name');
   if(savedName){ $('#nameInput').value = savedName; G.name = savedName; }
 
