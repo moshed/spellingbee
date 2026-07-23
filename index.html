@@ -36,6 +36,7 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0; height:100%; overflow:hidden; overscroll-behavior:none}
+  html{background:var(--bg)}   /* fills the status-bar / safe-area so it isn't white */
   body{
     background:var(--bg-grad);
     color:var(--ink); font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -90,17 +91,18 @@
   .lbtrack .gtick{position:absolute; top:16px; width:3px; height:15px; background:var(--accent); transform:translateX(-50%); border-radius:2px}
   .lbtrack .glabel{position:absolute; top:0; transform:translateX(-50%); font-size:10px; font-weight:800;
     color:var(--accent); white-space:nowrap; letter-spacing:.3px}
-  /* number bubbles sit ON the line, static vertically, move only horizontally */
-  .lbnum{position:absolute; top:11px; transform:translateX(-50%); min-width:24px; height:24px; padding:0 6px;
-    border-radius:999px; border:2px solid var(--bg); background:var(--panel2); color:var(--ink);
-    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px;
-    font-variant-numeric:tabular-nums; transition:left .35s ease}
-  .lbnum.me{background:var(--accent); color:var(--accent-ink)}
-  /* initials labels hang below and get spread out so they never overlap */
-  .lbname{position:absolute; top:40px; transform:translateX(-50%); font-size:10px; font-weight:700;
-    color:var(--muted); white-space:nowrap; line-height:1; transition:left .3s ease}
-  .lbname.me{color:var(--ink)}
-  .lbtrack .lblines{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible}
+  /* each player = a score bubble with their initial directly underneath, placed
+     by score. Tied players share one bubble; close players drop to a lower lane
+     so nothing overlaps and it's obvious who's ahead (furthest right). */
+  .pin{position:absolute; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
+    gap:3px; transition:left .35s ease, top .2s ease}
+  .pin .pnum{min-width:26px; height:24px; padding:0 8px; border-radius:999px; border:2px solid var(--bg);
+    background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:12px; font-variant-numeric:tabular-nums}
+  .pin.me .pnum{background:var(--accent); color:var(--accent-ink)}
+  .pin .pini{font-size:10px; font-weight:700; color:var(--muted); max-width:70px; line-height:1;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pin.me .pini{color:var(--ink)}
 
   /* ---- overflow menu (New / How to play) ---- */
   .menuwrap{position:relative; flex:0 0 auto}
@@ -767,7 +769,7 @@ function listRecentBoards(){
 // Six neighbours: one directly above, one below, and four on the diagonals
 // (the classic Spelling Bee flower). Box height = width * sin(60°).
 const HEXW = 92;                              // hex box width  (point-to-point)
-const HEXH = Math.round(HEXW * 0.866);        // hex box height (flat-to-flat)
+const HEXH = HEXW * Math.sqrt(3) / 2;         // exact hex box height (flat-to-flat) for a regular hexagon
 function layoutFlower(){
   const flower = $('#flower');
   flower.innerHTML = '';
@@ -885,58 +887,29 @@ function renderBoard(){
   const groups = [...byScore.entries()].map(([score,ps])=>({score, ps, pct:pctOf(score)}))
                   .sort((a,b)=> a.pct - b.pct);
 
-  // Number bubbles: ON the line, static vertically, positioned only by score.
-  // When bubbles are close they overlap — the leader (higher score) sits on top.
-  groups.forEach(g=>{
-    const mine = g.ps.some(p => p.id === PLAYER_ID);
-    const bub = document.createElement('div');
-    bub.className = 'lbnum' + (mine?' me':'');
-    bub.style.left = (g.pct*100)+'%';
-    bub.style.zIndex = String(2 + Math.round(g.pct*1000));   // leader over the one behind
-    bub.textContent = g.score;
-    bub.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`).join('\n');
-    track.appendChild(bub);
+  // Each player = a score bubble with their initial directly underneath, placed
+  // left→right by score. Tied players share one bubble (both initials). Close
+  // players drop to a lower lane so nothing overlaps — no connector lines, and
+  // it's obvious who leads (furthest right).
+  const sorted = groups.slice().sort((a,b)=> a.pct - b.pct);
+  const laneLast = []; const MIN_GAP = 0.14;
+  sorted.forEach(g=>{
+    let lane = 0;
+    while(lane < laneLast.length && g.pct - laneLast[lane] < MIN_GAP) lane++;
+    laneLast[lane] = g.pct; g.lane = lane;
   });
-
-  // Initials labels: each sits under its own bubble. ONLY move a label if it
-  // would overlap the one to its right — process leader→down, so the leader (and
-  // any label with room) stays put and only the crowded one behind slides left,
-  // with a connector line back to its bubble.
-  const GAP = 0.13;                                   // min horizontal gap (fraction of the line)
-  const desc = groups.slice().sort((a,b)=> b.pct - a.pct);
-  let prevX = Infinity;
-  desc.forEach(g=>{
-    let x = g.pct;
-    if(x > prevX - GAP) x = prevX - GAP;              // too close to the label on its right → slide left
-    if(x < 0) x = 0;
-    g.labelX = x;
-    g.moved = Math.abs(x - g.pct) > 0.002;
-    prevX = x;
-  });
-  // connector lines for the labels we had to slide
-  const moved = desc.filter(g => g.moved);
-  if(moved.length){
-    const NS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(NS,'svg');
-    svg.setAttribute('class','lblines'); svg.setAttribute('viewBox','0 0 100 56'); svg.setAttribute('preserveAspectRatio','none');
-    moved.forEach(g=>{
-      const x1 = (g.pct*100).toFixed(2), x2 = (g.labelX*100).toFixed(2);
-      // elbow: straight down from the bubble, across, then straight down to the label
-      const pl = document.createElementNS(NS,'polyline');
-      pl.setAttribute('points', `${x1},30 ${x1},35 ${x2},35 ${x2},40`);
-      pl.setAttribute('fill','none');
-      pl.setAttribute('stroke','var(--muted)'); pl.setAttribute('stroke-width','1'); pl.setAttribute('vector-effect','non-scaling-stroke');
-      svg.appendChild(pl);
-    });
-    track.appendChild(svg);
-  }
-  groups.forEach(g=>{
+  track.style.height = (28 + Math.max(1, laneLast.length)*36) + 'px';
+  sorted.forEach(g=>{
     const mine = g.ps.some(p => p.id === PLAYER_ID);
-    const lab = document.createElement('div');
-    lab.className = 'lbname' + (mine?' me':'');
-    lab.style.left = ((g.labelX!=null?g.labelX:g.pct)*100)+'%';
-    lab.textContent = g.ps.map(p => p.id===PLAYER_ID ? 'you' : initials(p.name)).join(' ');
-    track.appendChild(lab);
+    const pin = document.createElement('div');
+    pin.className = 'pin' + (mine?' me':'');
+    pin.style.left = (g.pct*100)+'%';
+    pin.style.top  = (24 + g.lane*36)+'px';
+    pin.style.zIndex = String(2 + Math.round(g.pct*1000));
+    const inits = g.ps.map(p => p.id===PLAYER_ID ? 'you' : initials(p.name)).join(' ');
+    pin.innerHTML = `<span class="pnum">${g.score}</span><span class="pini">${escapeHtml(inits)}</span>`;
+    pin.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`).join('\n');
+    track.appendChild(pin);
   });
 
   // full standings (inside the sheet)
