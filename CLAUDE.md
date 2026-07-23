@@ -42,6 +42,14 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
   a clipped `:active` brightness so the hex press state follows the hexagon
   shape (no square grey box).
 
+## Resume / recent boards
+Every board's progress is saved in localStorage (`hc_game_<sig>`, sig = sorted
+letters + center). The home screen shows a **Resume a game** list
+(`#resume`/`renderResume()`) built from all `hc_game_*` keys, newest first
+(`updated` stamp), so the browser links you back to any prior board — starting a
+New puzzle no longer strands the old one. Cross-*device* resume is the separate
+handoff link (identity in `&me`).
+
 ## Where the words come from
 NOT the DB. The word bank is `an-array-of-english-words` (~275k) fetched from a
 CDN at runtime, filtered per board, cached in the browser (localStorage `v2` +
