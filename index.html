@@ -191,6 +191,20 @@
   .resume-row:hover{border-color:#3a4150}
   .resume-row .rl-letters{font-weight:800; letter-spacing:3px; text-transform:uppercase}
   .resume-row .rl-meta{color:var(--muted); font-size:13px; white-space:nowrap}
+  /* previous-games modal */
+  .gfilters{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px}
+  .gfilters button{padding:6px 12px; border-radius:999px; background:transparent; border:1px solid var(--line); font-size:13px; font-weight:700; color:var(--muted)}
+  .gfilters button.active{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+  .game-row{display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--panel2);
+    border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
+  .game-row .g-letters{font-weight:800; letter-spacing:3px; text-transform:uppercase}
+  .game-row .g-meta{flex:1; color:var(--muted); font-size:12px; text-align:right; white-space:nowrap}
+  .g-badge{font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap}
+  .g-badge.win{background:rgba(63,185,80,.18); color:var(--good)}
+  .g-badge.lose{background:rgba(240,97,109,.18); color:var(--bad)}
+  .g-badge.close{background:rgba(247,218,33,.18); color:#b99500}
+  .g-badge.solo{background:var(--panel); color:var(--muted)}
+  #gamesList .empty{color:var(--muted); padding:14px 4px; text-align:center}
   .row2{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--muted)}
   .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#111521; border:1px solid var(--line);
@@ -220,15 +234,12 @@
     </div>
   </header>
 
-  <!-- ============== RESUME (your saved boards) — collapsed ============== -->
-  <section id="resume" class="words hidden" style="margin-bottom:14px">
-    <button class="words-head" id="resumeToggle" aria-expanded="false">
-      <span id="resumeLabel">Previous games</span>
-      <span class="chev">⌄</span>
+  <!-- ============== RESUME last game (quick) ============== -->
+  <section id="resume" class="hidden" style="margin-bottom:14px">
+    <button class="resume-row" id="resumeLast">
+      <span class="rl-letters" id="resumeLastLetters"></span>
+      <span class="rl-meta" id="resumeLastMeta"></span>
     </button>
-    <div class="words-body hidden" id="resumeBody">
-      <div id="resumeList"></div>
-    </div>
   </section>
 
   <!-- ================= SETUP ================= -->
@@ -333,6 +344,23 @@
   <div style="text-align:right; margin-top:16px">
     <button onclick="this.closest('dialog').close()" class="ghost">Close</button>
   </div>
+</dialog>
+
+<!-- Previous games (full, filterable) -->
+<dialog id="gamesModal" class="dlg" style="max-width:520px; width:92vw">
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px">
+    <h2 style="margin:0; flex:1">Previous games</h2>
+    <button onclick="this.closest('dialog').close()" class="ghost">✕</button>
+  </div>
+  <div class="gfilters" id="gamesFilters">
+    <button data-f="all" class="active">All</button>
+    <button data-f="solo">Solo</button>
+    <button data-f="multi">Multiplayer</button>
+    <button data-f="winning">Winning</button>
+    <button data-f="losing">Losing</button>
+    <button data-f="close">Close</button>
+  </div>
+  <div id="gamesList" style="max-height:60vh; overflow-y:auto; touch-action:pan-y"></div>
 </dialog>
 
 <!-- Change-name dialog -->
@@ -1283,18 +1311,12 @@ $('#btnTheme').addEventListener('click', ()=>{
 try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ if(currentTheme()==='auto') updateThemeColor(); }); }catch(e){}
 applyTheme(currentTheme());
 
-/* ---------- previous games (reachable from anywhere) ---------- */
-$('#btnGames').addEventListener('click', ()=>{
-  closeMenu();
-  location.href = location.origin + location.pathname + '#home';   // go home, show the list
-});
-
-/* resume list collapse/expand (keeps the home screen compact) */
-$('#resumeToggle').addEventListener('click', ()=>{
-  const box = $('#resume'), open = box.classList.toggle('open');
-  $('#resumeBody').classList.toggle('hidden', !open);
-  $('#resumeToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
-});
+/* ---------- previous games — full filterable list ---------- */
+$('#btnGames').addEventListener('click', ()=>{ closeMenu(); openGamesModal(); });
+$$('#gamesFilters button').forEach(b=> b.addEventListener('click', ()=>{
+  $$('#gamesFilters button').forEach(x=> x.classList.toggle('active', x===b));
+  drawGames(b.dataset.f);
+}));
 /* sort the found-words list */
 $$('#wordSort button').forEach(b=>{
   b.classList.toggle('active', b.dataset.sort === G.foundSort);
@@ -1357,60 +1379,98 @@ $('#joinGo').addEventListener('click', ()=>{
   if(joinRoute){ const r = joinRoute; joinRoute = null; startGame(r.letters, r.center, r.room); }
 });
 
-/* resume list on the home screen — local boards + this player's cloud games */
-function drawResume(boards){
-  const sec = $('#resume'), list = $('#resumeList');
+// ---- Home screen: quick "resume last game" button (just the most recent) ----
+function renderResume(){
+  const boards = listRecentBoards();
+  const sec = $('#resume');
   if(!boards.length){ sec.classList.add('hidden'); return; }
+  const d = boards[0];   // most-recently-updated
+  const letters = (d.letters||[]).map(l => l===d.center
+    ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
   sec.classList.remove('hidden');
-  $('#resumeLabel').textContent = 'Previous games (' + boards.length + ')';
-  if(location.hash === '#home'){   // arrived here to see the list — open it
-    sec.classList.add('open');
-    $('#resumeBody').classList.remove('hidden');
-    $('#resumeToggle').setAttribute('aria-expanded','true');
-  }
-  list.innerHTML = '';
-  boards.slice(0,12).forEach(d=>{
-    const letters = (d.letters||[]).map(l => l===d.center
-      ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
-    const multi = d.room ? '👥 ' : '';   // a shared/joined multiplayer game
-    const btn = document.createElement('button');
-    btn.className = 'resume-row';
-    btn.innerHTML = `<span class="rl-letters">${letters}</span>`+
-      `<span class="rl-meta">${multi}${d.score||0} pts · ${(d.found||[]).length} words · ${timeAgo(d.updated||d.startedAt)}</span>`;
-    btn.addEventListener('click', ()=> startGame(d.letters, d.center, d.room));
-    list.appendChild(btn);
-  });
+  $('#resumeLastLetters').innerHTML = '▶ ' + letters;
+  $('#resumeLastMeta').textContent = (d.room?'👥 ':'') + (d.score||0) + ' pts · ' + (d.found||[]).length + ' words · ' + timeAgo(d.updated||d.startedAt);
+  $('#resumeLast').onclick = ()=> startGame(d.letters, d.center, d.room);
 }
-// Merge boards by room (or by puzzle when no room), keeping the richer copy.
-function mergeBoards(...sources){
-  const by = new Map();
-  sources.flat().forEach(d=>{
-    if(!d || !d.letters || !d.center) return;
-    const key = d.room || ([...d.letters].sort().join('')+'.'+d.center);
-    const cur = by.get(key);
-    if(!cur || (d.updated||0) > (cur.updated||0) || (d.score||0) > (cur.score||0)) by.set(key, d);
-  });
-  return [...by.values()].sort((a,b)=> (b.updated||0)-(a.updated||0));
+
+// ---- Previous games modal: all games I've played + standings + filters ----
+let _allGames = [];
+function classifyGame(d){
+  const others = (d.players||[]).filter(p => p.id !== PLAYER_ID);
+  const multi = others.length > 0;
+  const best = others.reduce((m,p)=> Math.max(m, p.score||0), 0);
+  const my = d.score||0;
+  const margin = Math.max(6, Math.round(0.08*Math.max(my,best,1)));
+  return {
+    ...d, multi,
+    winning: multi && my >= best,
+    losing:  multi && my <  best,
+    close:   multi && Math.abs(my-best) <= margin
+  };
 }
-async function fetchCloudGames(){
-  if(!Net.configured()) return [];
+async function fetchAllMyGames(){
+  const local = listRecentBoards().map(d=>({letters:d.letters, center:d.center, room:d.room,
+    score:d.score||0, found:d.found||[], updated:d.updated||d.startedAt||0, players:[]}));
+  if(!Net.configured()) return local.map(classifyGame);
   try{
     const sb = await Net.client();
-    const { data, error } = await sb.from(SUPABASE_TABLE).select('*').eq('player_id', PLAYER_ID);
-    if(error) return [];
-    return (data||[]).filter(r => r.letters && r.center).map(r=>({
-      letters: String(r.letters).split(''), center: r.center, room: r.room,
-      score: r.score||0, found: Array.isArray(r.found)?r.found:[], name: r.name,
-      updated: r.updated_at ? Date.parse(r.updated_at) : 0
+    const { data: mine } = await sb.from(SUPABASE_TABLE).select('*').eq('player_id', PLAYER_ID);
+    const rooms = [...new Set((mine||[]).map(r=>r.room).filter(Boolean))];
+    let roster = [];
+    if(rooms.length){
+      const { data } = await sb.from(SUPABASE_TABLE).select('room,player_id,name,score').in('room', rooms);
+      roster = data||[];
+    }
+    const cloud = (mine||[]).filter(r=>r.letters && r.center).map(r=>({
+      letters:String(r.letters).split(''), center:r.center, room:r.room,
+      score:r.score||0, found:Array.isArray(r.found)?r.found:[],
+      updated: r.updated_at ? Date.parse(r.updated_at) : 0,
+      players: roster.filter(o=>o.room===r.room).map(o=>({id:o.player_id, name:o.name, score:o.score||0}))
     }));
-  }catch(e){ return []; }
+    // merge cloud + local by room/puzzle, richer copy wins
+    const by = new Map();
+    [...cloud, ...local].forEach(d=>{
+      const key = d.room || ([...d.letters].sort().join('')+'.'+d.center);
+      const cur = by.get(key);
+      if(!cur || (d.players?.length||0) > (cur.players?.length||0) || (d.updated||0) > (cur.updated||0)) by.set(key, d);
+    });
+    return [...by.values()].sort((a,b)=>(b.updated||0)-(a.updated||0)).map(classifyGame);
+  }catch(e){ return local.map(classifyGame); }
 }
-function renderResume(){
-  const local = listRecentBoards();
-  drawResume(mergeBoards(local));                 // show local instantly
-  fetchCloudGames().then(cloud=>{                 // then fold in this player's cloud games
-    if(cloud.length) drawResume(mergeBoards(local, cloud));
+function drawGames(filter){
+  const list = $('#gamesList');
+  let games = _allGames;
+  if(filter==='solo')      games = games.filter(g=>!g.multi);
+  else if(filter==='multi')games = games.filter(g=>g.multi);
+  else if(filter==='winning')games = games.filter(g=>g.winning);
+  else if(filter==='losing') games = games.filter(g=>g.losing);
+  else if(filter==='close')  games = games.filter(g=>g.close);
+  list.innerHTML = '';
+  if(!games.length){ list.innerHTML = '<div class="empty">No games here yet.</div>'; return; }
+  games.forEach(g=>{
+    const letters = (g.letters||[]).map(l => l===g.center
+      ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
+    let badge = '<span class="g-badge solo">Solo</span>';
+    if(g.multi){
+      const who = '👥' + (g.players.length);
+      badge = g.close ? `<span class="g-badge close">Close · ${who}</span>`
+            : g.winning ? `<span class="g-badge win">Winning · ${who}</span>`
+            : `<span class="g-badge lose">Behind · ${who}</span>`;
+    }
+    const row = document.createElement('button');
+    row.className = 'game-row';
+    row.innerHTML = `<span class="g-letters">${letters}</span>`+
+      `<span class="g-meta">${g.score||0} pts · ${(g.found||[]).length} w · ${timeAgo(g.updated)}</span>`+ badge;
+    row.addEventListener('click', ()=>{ $('#gamesModal').close(); startGame(g.letters, g.center, g.room); });
+    list.appendChild(row);
   });
+}
+async function openGamesModal(){
+  $('#gamesList').innerHTML = '<div class="empty">Loading…</div>';
+  $$('#gamesFilters button').forEach(x=> x.classList.toggle('active', x.dataset.f==='all'));
+  $('#gamesModal').showModal();
+  _allGames = await fetchAllMyGames();
+  drawGames('all');
 }
 
 /* live timer */
