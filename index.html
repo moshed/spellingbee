@@ -474,7 +474,7 @@ async function fetchFullDict(){
 
 // Build the set of all valid words for a given puzzle. Bump the cache version
 // to invalidate boards cached from the old (junkier) dictionary.
-const DICT_CACHE_VER = 'v3';
+const DICT_CACHE_VER = 'v4';
 async function computeValidWords(letters, center){
   const key = 'hc_dict_' + DICT_CACHE_VER + '_' + [...letters].sort().join('') + '_' + center;
   const cached = localStorage.getItem(key);
@@ -865,6 +865,7 @@ function renderNetNote(){
 function addChar(ch){
   ch = (ch||'').toLowerCase();
   if(!/^[a-z]$/.test(ch)) return;
+  if(G.letters.length && !G.letters.includes(ch)) return;   // only letters on the board
   if(G.typed.length >= 24) return;
   G.typed += ch; renderEntry();
 }
