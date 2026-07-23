@@ -440,8 +440,11 @@ async function fetchFullDict(){
   _dictPromise = (async ()=>{
     // 1) preferred: our own curated, same-origin word list (SCOWL American +
     //    common gap-fillers, British spellings & abbreviations removed).
+    //    Use 'no-cache' so the browser REVALIDATES with the server (cheap 304
+    //    via ETag) instead of serving a stale copy forever — this is what made
+    //    dictionary updates like `defund` never reach the phone.
     try{
-      const res = await fetch('words.json', {cache:'force-cache'});
+      const res = await fetch('words.json', {cache:'no-cache'});
       if(res.ok){
         const arr = await res.json();
         if(Array.isArray(arr) && arr.length > 20000){ _fullDict = new Set(arr); return _fullDict; }
