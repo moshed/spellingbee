@@ -1046,11 +1046,20 @@ async function copyLink(url, msg){
     prompt('Copy this link:', url);   // absolute last resort if clipboard is blocked
   }
 }
+// Share via the edge function so the link shows a per-puzzle preview image
+// (the flower for these letters). It redirects into the game when opened.
+const SHARE_FN = 'https://atqhfbaurrmivjarowco.supabase.co/functions/v1/sb-share';
+function buildPreviewShareUrl(){
+  const p = new URLSearchParams();
+  p.set('l', G.letters.join(''));
+  p.set('c', G.center);
+  if(Net.room) p.set('r', Net.room);
+  return SHARE_FN + '?' + p.toString();
+}
 async function onShare(){
   await ensureRoom();
-  // when live, others get our score over realtime, so no need to bake it in
-  const url = buildShareUrl({withScore: !Net.live});
-  copyLink(url, Net.live ? 'Invite link copied — scores sync live!' : 'Link copied — send it to your friends!');
+  const url = Net.configured() ? buildPreviewShareUrl() : buildShareUrl({withScore:true});
+  copyLink(url, Net.live ? 'Invite link copied — shows a preview & scores sync live!' : 'Link copied — send it to your friends!');
 }
 
 /* ============================================================
