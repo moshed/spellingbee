@@ -21,14 +21,16 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
 - **Leaderboard = number line** (`#lbTrack`): players placed left→right by
   score (`left = score/maxScore`), score number with initials stacked beneath.
   Only ONE milestone marked — **Genius at 70%**, yellow tick + label. Tied
-  players merge into one bubble showing all their initials; close-but-not-tied
-  bubbles drop into lower lanes (`MIN_GAP`, track height grows) so labels don't
-  overlap. Tap → `#boardSheet`. Header = logo + ⋯ menu.
-- **Claim identity** (`claimPlayer`): in the standings sheet each other player
-  has a "this is me" button — adopts that `player_id` on this device, deletes
-  the throwaway row, reloads into the board, and `pullMine()` restores their
-  words. This is the practical cross-device resume when you've already joined as
-  a fresh player.
+  players merge into one bubble (`.lbnum`) showing all their initials. Number
+  bubbles are STATIC vertically (on the line), move only horizontally by score;
+  close bubbles overlap with the leader on top (z-index = f(pct)). Only the
+  initials labels (`.lbname`) move — spread horizontally (forward-push + clamp
+  to [0,1], `GAP`) so they never overlap. Tap → `#boardSheet`. Header = logo+⋯.
+- **No identity claiming.** There is deliberately NO "take over this player"
+  action — it would let anyone in a room hijack another player. Cross-device
+  resume = the **handoff link** (Continue on another device) generated on the
+  original device (`&me`,`&n`), which `pullMine()` restores. Player_id is a PK
+  visible to room members, so a UI claim button can't be made secure.
 - **Overflow menu** (`#btnMenu` ⋯): Invite/copy link, Continue on another
   device, New puzzle, How to play. Scoring: 4-letter=1pt, +1/extra letter,
   pangram +7 (`wordScore` = `len-3` +7).
