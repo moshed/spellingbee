@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Honeycomb — Spelling Hive</title>
+<title>Spelling Bee — dancykier.com</title>
 <meta name="description" content="A hexagonal word game. Make as many words as you can using the yellow center letter. Share a link to play against friends." />
 <style>
   :root{
@@ -19,7 +19,7 @@
     -webkit-text-size-adjust:100%;
   }
   a{color:var(--accent)}
-  .wrap{max-width:960px; margin:0 auto; padding:16px 16px 48px; min-height:100%}
+  .wrap{max-width:960px; margin:0 auto; padding:14px 14px 20px; min-height:100dvh; display:flex; flex-direction:column}
   header.top{display:flex; align-items:center; gap:12px; margin-bottom:8px}
   .logo{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.3px}
   .logo .dot{width:20px;height:22px;background:var(--accent);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
@@ -37,50 +37,81 @@
   .muted{color:var(--muted)}
   .hidden{display:none !important}
 
-  /* ---- layout ---- */
-  .game{display:grid; grid-template-columns:1fr 320px; gap:18px; align-items:start}
-  @media(max-width:820px){ .game{grid-template-columns:1fr} .side{order:-1} }
+  /* ================= GAME: fit-to-screen column ================= */
+  .game{width:100%; max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:12px; flex:1 1 auto}
+  body.playing .wrap{min-height:100dvh}
+  body.playing footer{display:none}
+
+  /* ---- top line: rank progress + collapsed crew ---- */
+  .topline{display:flex; align-items:flex-end; gap:12px}
+  .progress{flex:1; min-width:0}
+  .progress .rank{font-weight:800; font-size:14px; display:block; margin-bottom:8px}
+  .dots{display:flex; align-items:center}
+  .dots .seg{flex:1 1 auto; height:2px; background:var(--line); min-width:4px}
+  .dots .mk{width:9px; height:9px; border-radius:50%; background:var(--line); flex:0 0 auto}
+  .dots .mk.done{background:var(--muted)}
+  .dots .mk.last{border-radius:2px}
+  .dots .mk.cur{min-width:26px; height:26px; border-radius:999px; padding:0 6px; background:var(--accent);
+    color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px}
+
+  /* ---- collapsed scoreboard (top-right initials) ---- */
+  .crew{flex:0 0 auto; cursor:pointer; -webkit-tap-highlight-color:transparent}
+  .crew .avatars{display:flex}
+  .crew .av{width:30px; height:30px; border-radius:50%; margin-left:-9px; border:2px solid var(--bg);
+    background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:800; letter-spacing:.3px}
+  .crew .av:first-child{margin-left:0}
+  .crew .av.me{background:var(--accent); color:var(--accent-ink)}
+  .crew .av.more{background:var(--panel2); color:var(--muted)}
+
+  /* ---- your-words dropdown ---- */
+  .words{border:1px solid var(--line); border-radius:14px; background:var(--panel); overflow:hidden}
+  .words-head{width:100%; text-align:left; background:transparent; border:0; border-radius:0; color:var(--muted);
+    display:flex; align-items:center; justify-content:space-between; padding:14px 16px; font-weight:600}
+  .words-head .chev{transition:transform .18s ease}
+  .words.open .words-head .chev{transform:rotate(180deg)}
+  .words-body{padding:2px 14px 14px; max-height:24vh; overflow:auto}
+  .wordgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:4px 12px}
+  .wordgrid span{padding:3px 2px; border-bottom:1px solid var(--line); text-transform:capitalize; font-size:14px}
+  .wordgrid span.pan{color:var(--accent); font-weight:700}
+  .wordgrid .empty{color:var(--muted); grid-column:1/-1; padding:6px 0}
 
   /* ---- input row ---- */
-  .entry{display:flex; align-items:center; justify-content:center; min-height:44px; margin:6px 0 14px;
+  .flash{position:relative; height:22px; text-align:center; font-weight:700}
+  .flash .msg{position:absolute; left:50%; transform:translateX(-50%); padding:2px 12px; border-radius:20px; white-space:nowrap}
+  .flash .ok{background:rgba(63,185,80,.15); color:var(--good)}
+  .flash .no{background:rgba(240,97,109,.15); color:var(--bad)}
+  .entry{display:flex; align-items:center; justify-content:center; min-height:40px;
     font-size:30px; font-weight:800; letter-spacing:4px; text-transform:uppercase; user-select:none}
   .entry .caret{width:3px; height:32px; background:var(--accent); display:inline-block; margin-left:2px; animation:blink 1s steps(1) infinite}
   .entry .center{color:var(--accent)}
   @keyframes blink{50%{opacity:0}}
-  .flash{position:relative; height:24px; text-align:center; margin:-6px 0 8px; font-weight:700}
-  .flash .msg{position:absolute; left:50%; transform:translateX(-50%); padding:2px 12px; border-radius:20px; white-space:nowrap}
-  .flash .ok{background:rgba(63,185,80,.15); color:var(--good)}
-  .flash .no{background:rgba(240,97,109,.15); color:var(--bad)}
 
-  /* ---- hex flower ---- */
-  .flower-wrap{display:flex; justify-content:center; margin:8px 0 18px}
-  .flower{position:relative; width:300px; height:300px; touch-action:manipulation}
-  .hex{position:absolute; left:50%; top:50%; width:86px; height:99px; transform:translate(-50%,-50%);
-    background:var(--hex); color:var(--hex-ink); clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
-    display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:800; text-transform:uppercase;
+  /* ---- flat-top hex flower (fills remaining space) ---- */
+  .flower-wrap{flex:1 1 auto; display:flex; align-items:center; justify-content:center; min-height:0}
+  .flower{position:relative; width:290px; height:290px; touch-action:manipulation}
+  .hex{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    background:var(--hex); color:var(--hex-ink);
+    clip-path:polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; text-transform:uppercase;
     cursor:pointer; transition:transform .08s ease, filter .1s}
   .hex:hover{filter:brightness(.94)}
-  .hex:active{transform:translate(-50%,-50%) scale(.92)}
+  .hex:active{transform:translate(-50%,-50%) scale(.9)}
   .hex.center{background:var(--accent); color:var(--accent-ink)}
 
-  .controls{display:flex; gap:10px; justify-content:center; flex-wrap:wrap}
-  .controls .icon{font-size:18px}
+  /* ---- controls ---- */
+  .controls{flex:0 0 auto; display:flex; gap:12px; justify-content:center; padding-bottom:6px}
+  .pillbtn{border-radius:999px; padding:14px 22px; background:transparent; border:1px solid var(--line); font-weight:600}
+  .pillbtn.icon{font-size:18px; padding:14px 18px}
 
-  /* ---- stats / progress ---- */
-  .rankbar{display:flex; align-items:center; gap:10px; margin:2px 0 12px}
-  .rankbar .rank{font-weight:800}
-  .track{flex:1; height:8px; border-radius:8px; background:var(--panel2); position:relative; overflow:hidden}
-  .track > i{position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg,#f7da21,#ffb703); width:0%}
-  .score-big{font-size:15px}
-  .score-big b{font-size:22px}
-
-  /* ---- found words ---- */
-  .found h3{margin:2px 0 8px; font-size:14px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.6px}
-  .wordgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:4px 10px; max-height:220px; overflow:auto}
-  .wordgrid span{padding:3px 2px; border-bottom:1px solid var(--line); text-transform:capitalize; font-size:14px}
-  .wordgrid span.pan{color:var(--accent); font-weight:700}
-
-  /* ---- scoreboard ---- */
+  /* ---- scoreboard sheet (opens from the crew chip) ---- */
+  .sheet{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:60; display:flex;
+    align-items:flex-start; justify-content:flex-end; padding:14px}
+  .sheet-card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px;
+    width:min(340px,92vw); margin-top:52px; max-height:80vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .sheet-head{display:flex; align-items:center; gap:10px; margin-bottom:8px}
+  .sheet-head strong{flex:1}
+  .sheet-head .x{background:transparent; border:0; color:var(--muted); font-size:18px; padding:2px 6px}
   .board .row{display:flex; align-items:center; gap:8px; padding:8px 4px; border-bottom:1px solid var(--line)}
   .board .row:last-child{border-bottom:0}
   .board .who{flex:1; min-width:0}
@@ -91,7 +122,7 @@
   .dotlive{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(63,185,80,.6);animation:pulse 1.6s infinite}
   .dotoff{width:8px;height:8px;border-radius:50%;background:#5a6072}
   @keyframes pulse{70%{box-shadow:0 0 0 7px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
-  .timer{font-variant-numeric:tabular-nums; font-weight:800}
+  .timer{font-variant-numeric:tabular-nums; font-weight:800; color:var(--muted); font-size:14px}
   .netnote{font-size:12px; margin-top:8px}
 
   /* ---- setup ---- */
@@ -101,23 +132,26 @@
   .row2{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--muted)}
   .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#111521; border:1px solid var(--line);
-    padding:12px 16px; border-radius:12px; opacity:0; transition:all .25s; z-index:50}
+    padding:12px 16px; border-radius:12px; opacity:0; transition:all .25s; z-index:70}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .dlg{max-width:420px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:16px; padding:20px}
+  .dlg::backdrop{background:rgba(0,0,0,.55)}
   kbd{background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:1px 6px; font-size:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="logo"><span class="dot"></span> Honeycomb <small>· Spelling Hive</small></div>
+    <div class="logo"><span class="dot"></span> Spelling Bee</div>
     <div class="spacer"></div>
     <button id="btnHelp" class="ghost" title="How to play">?</button>
-    <button id="btnNew" class="ghost hidden">New puzzle</button>
+    <button id="btnNew" class="ghost hidden">New</button>
+    <div class="crew hidden" id="crew" title="Scoreboard"><div class="avatars" id="avatars"></div></div>
   </header>
 
   <!-- ================= SETUP ================= -->
   <section id="setup" class="card setup">
-    <h2 style="margin:.2em 0">Set up your hive</h2>
+    <h2 style="margin:.2em 0">Set up your Spelling Bee</h2>
     <p class="muted" style="margin-top:0">Make as many words as you can. Every word must use the <b style="color:var(--accent)">yellow center letter</b> and be at least 4 letters. Share the link and friends play the same board — you'll see each other's live scores.</p>
 
     <div class="row2" style="margin:14px 0">
@@ -138,43 +172,32 @@
 
   <!-- ================= GAME ================= -->
   <section id="game" class="game hidden">
-    <div class="main">
-      <div class="card">
-        <div class="flash" id="flash"></div>
-        <div class="entry" id="entry"><span class="caret"></span></div>
-
-        <div class="flower-wrap"><div class="flower" id="flower"></div></div>
-
-        <div class="controls">
-          <button id="btnDelete">Delete</button>
-          <button id="btnShuffle" class="icon" title="Shuffle">🔀</button>
-          <button id="btnEnter" class="primary">Enter</button>
-        </div>
+    <div class="topline">
+      <div class="progress">
+        <span class="rank" id="rankName">Beginner</span>
+        <div class="dots" id="rankDots"></div>
       </div>
+    </div>
 
-      <div class="card found" style="margin-top:16px">
-        <div class="rankbar">
-          <span class="rank" id="rankName">Beginner</span>
-          <span class="track"><i id="rankFill"></i></span>
-          <span class="score-big"><b id="scoreNum">0</b></span>
-        </div>
-        <h3><span id="foundCount">0</span> words found</h3>
+    <div class="words" id="wordsBox">
+      <button class="words-head" id="wordsToggle" aria-expanded="false">
+        <span id="wordsLabel">Your words …</span>
+        <span class="chev">⌄</span>
+      </button>
+      <div class="words-body hidden" id="wordsBody">
         <div class="wordgrid" id="wordGrid"></div>
       </div>
     </div>
 
-    <div class="side">
-      <div class="card board">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px">
-          <strong style="flex:1">Scoreboard</strong>
-          <span class="timer" id="timer">0:00</span>
-        </div>
-        <div id="boardRows"></div>
-        <div class="netnote muted" id="netNote"></div>
-        <div style="margin-top:12px; display:flex; gap:8px">
-          <button id="btnShare" class="primary" style="flex:1">🔗 Invite / Share</button>
-        </div>
-      </div>
+    <div class="flash" id="flash"></div>
+    <div class="entry" id="entry"><span class="caret"></span></div>
+
+    <div class="flower-wrap"><div class="flower" id="flower"></div></div>
+
+    <div class="controls">
+      <button id="btnDelete" class="pillbtn">Delete</button>
+      <button id="btnShuffle" class="pillbtn icon" title="Shuffle">↻</button>
+      <button id="btnEnter" class="pillbtn">Enter</button>
     </div>
   </section>
 
@@ -183,7 +206,31 @@
   </footer>
 </div>
 
+<!-- scoreboard sheet (opens from the crew chip) -->
+<div class="sheet hidden" id="boardSheet">
+  <div class="sheet-card board">
+    <div class="sheet-head">
+      <strong>Scoreboard</strong>
+      <span class="timer" id="timer">0:00</span>
+      <button class="x" id="boardClose" title="Close">✕</button>
+    </div>
+    <div id="boardRows"></div>
+    <div class="netnote muted" id="netNote"></div>
+    <button id="btnShare" class="primary" style="width:100%; margin-top:12px">🔗 Invite / Share</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
+
+<!-- Join dialog (shown when arriving via an invite link) -->
+<dialog id="joinDlg" class="dlg">
+  <h2 style="margin-top:0">Join the game</h2>
+  <p class="muted" style="margin-top:0">Pick a name so the others can see your score on the shared board.</p>
+  <input id="joinName" maxlength="20" placeholder="Your name" style="width:100%">
+  <div style="text-align:right; margin-top:16px">
+    <button id="joinGo" class="primary">Join game</button>
+  </div>
+</dialog>
 
 <!-- Help dialog -->
 <dialog id="help" style="max-width:520px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:16px; padding:20px">
@@ -403,6 +450,24 @@ const Net = {
     const { error } = await sb.from(SUPABASE_TABLE).upsert(row, { onConflict:'room,player_id' });
     if(error) throw error;
   },
+  // Polling safety-net: re-pull the room every few seconds so scores stay in
+  // sync even if a realtime event is missed (flaky mobile networks, etc.).
+  async refresh(){
+    if(!this.live || !this.room || !this.sb) return;
+    try{
+      const { data, error } = await this.sb.from(SUPABASE_TABLE).select('*').eq('room', this.room);
+      if(error) return;
+      let changed = false;
+      (data||[]).forEach(r=>{
+        if(r.player_id === PLAYER_ID) return;
+        const cur = G.players[r.player_id];
+        if(!cur || cur.score !== (r.score||0) || cur.words !== (r.words||0) || cur.name !== r.name){
+          G.players[r.player_id] = rowToPlayer(r); changed = true;
+        }
+      });
+      if(changed) renderBoard();
+    }catch(e){ /* ignore transient errors */ }
+  },
   async leave(){
     try{ if(this.channel && this.sb) await this.sb.removeChannel(this.channel); }catch(e){}
     this.channel = null; this.live = false;
@@ -448,22 +513,36 @@ function loadProgress(roomKey){
 /* ============================================================
    Rendering
    ============================================================ */
-const HEX_D = 86;   // neighbour distance ~ hex width, keeps the flower tessellated
+// Flat-top hexagons: flat edge on top/bottom, points on left/right.
+// Six neighbours: one directly above, one below, and four on the diagonals
+// (the classic Spelling Bee flower). Box height = width * sin(60°).
+const HEXW = 92;                              // hex box width  (point-to-point)
+const HEXH = Math.round(HEXW * 0.866);        // hex box height (flat-to-flat)
 function layoutFlower(){
   const flower = $('#flower');
   flower.innerHTML = '';
   const outer = G.letters.filter(l => l !== G.center);
   const ordered = G.order.map(i => outer[i]);
-  const positions = [[0,0]];
-  for(let i=0;i<6;i++){
-    const a = (Math.PI/180)*(60*i - 90);   // start at top
-    positions.push([HEX_D*Math.cos(a), HEX_D*Math.sin(a)]);
-  }
+  const S = 1.04;                             // spacing >1 leaves a hairline gap
+  const dx = 0.75 * HEXW * S;                 // diagonal horizontal offset
+  const dyDiag = 0.5 * HEXH * S;              // diagonal vertical offset
+  const dyTop  = HEXH * S;                    // top / bottom vertical offset
+  const positions = [                         // clockwise from the top
+    [0, 0],
+    [0, -dyTop],        // top
+    [ dx, -dyDiag],     // upper-right
+    [ dx,  dyDiag],     // lower-right
+    [0,  dyTop],        // bottom
+    [-dx,  dyDiag],     // lower-left
+    [-dx, -dyDiag],     // upper-left
+  ];
   const cells = [G.center, ...ordered];
   cells.forEach((ch,i)=>{
     const d = document.createElement('div');
     d.className = 'hex' + (i===0 ? ' center' : '');
     d.textContent = ch;
+    d.style.width  = HEXW + 'px';
+    d.style.height = HEXH + 'px';
     d.style.left = `calc(50% + ${positions[i][0]}px)`;
     d.style.top  = `calc(50% + ${positions[i][1]}px)`;
     d.addEventListener('click', ()=>{ addChar(ch); });
@@ -483,27 +562,72 @@ function renderEntry(){
   const caret = document.createElement('span'); caret.className='caret'; e.appendChild(caret);
 }
 function renderFound(){
-  $('#foundCount').textContent = G.found.length;
   const grid = $('#wordGrid'); grid.innerHTML='';
-  [...G.found].sort().forEach(w=>{
-    const s = document.createElement('span');
-    const sc = wordScore(w, G.letters);
-    if(sc.pangram) s.className='pan';
-    s.textContent = w;
-    grid.appendChild(s);
-  });
+  if(G.found.length === 0){
+    grid.innerHTML = '<span class="empty">No words yet — find one that uses the yellow center letter.</span>';
+  }else{
+    [...G.found].sort().forEach(w=>{
+      const s = document.createElement('span');
+      const sc = wordScore(w, G.letters);
+      if(sc.pangram) s.className='pan';
+      s.textContent = w;
+      grid.appendChild(s);
+    });
+  }
+  updateWordsLabel();
+}
+function updateWordsLabel(){
+  const n = G.found.length;
+  $('#wordsLabel').textContent = n ? `${n} word${n===1?'':'s'} · ${G.score} pts` : 'Your words …';
 }
 function renderScore(){
-  $('#scoreNum').textContent = G.score;
   const r = rankFor(G.score, G.maxScore);
   $('#rankName').textContent = r.name;
-  $('#rankFill').style.width = (r.pct*100).toFixed(1)+'%';
+  renderRankDots(r);
+  updateWordsLabel();
+}
+function renderRankDots(r){
+  const wrap = $('#rankDots'); wrap.innerHTML='';
+  let curIdx = 0;
+  RANKS.forEach(([t],i)=>{ if(r.pct >= t) curIdx = i; });
+  RANKS.forEach(([t,name],i)=>{
+    if(i>0){ const seg=document.createElement('span'); seg.className='seg'; wrap.appendChild(seg); }
+    const mk = document.createElement('span');
+    mk.className = 'mk' + (i<curIdx?' done':'') + (i===curIdx?' cur':'') + (i===RANKS.length-1?' last':'');
+    mk.title = name;
+    if(i===curIdx) mk.textContent = G.score;
+    wrap.appendChild(mk);
+  });
+}
+function initials(name){
+  const s = (name||'').trim();
+  if(!s) return '?';
+  const parts = s.split(/\s+/);
+  const str = parts.length>1 ? (parts[0][0]+parts[1][0]) : s.slice(0,2);
+  return str.toUpperCase();
 }
 function renderBoard(){
-  const rows = $('#boardRows'); rows.innerHTML='';
   const entries = Object.entries(G.players)
     .map(([id,p])=>({id, ...p}))
     .sort((a,b)=> b.score - a.score || (a.updated-b.updated));
+
+  // collapsed crew (top-right initials, leader first)
+  const crew = $('#crew'); crew.classList.remove('hidden');
+  const av = $('#avatars'); av.innerHTML='';
+  entries.slice(0,3).forEach(p=>{
+    const d = document.createElement('div');
+    d.className = 'av' + (p.id===PLAYER_ID?' me':'');
+    d.textContent = initials(p.name);
+    d.title = (p.name||'Player') + ' · ' + (p.score||0);
+    av.appendChild(d);
+  });
+  if(entries.length > 3){
+    const m = document.createElement('div'); m.className='av more';
+    m.textContent = '+' + (entries.length-3); av.appendChild(m);
+  }
+
+  // full standings (inside the sheet)
+  const rows = $('#boardRows'); rows.innerHTML='';
   if(entries.length === 0){
     rows.innerHTML = '<div class="muted" style="padding:8px 4px">Just you so far. Share the link to invite players.</div>';
   }
@@ -622,7 +746,7 @@ async function onShare(){
   }
   // When live, others get our score via realtime, so no need to bake it into the link.
   const url = buildShareUrl({withScore: !Net.live});
-  const shareData = {title:'Honeycomb — Spelling Hive', text:'Beat my score in this word puzzle!', url};
+  const shareData = {title:'Spelling Bee', text:'Beat my score in this Spelling Bee puzzle!', url};
   try{
     if(navigator.share){ await navigator.share(shareData); return; }
   }catch(e){ /* fall through to copy */ }
@@ -668,9 +792,11 @@ async function startGame(letters, center, roomId){
   G.players[PLAYER_ID] = myEntry();
 
   // swap screens
+  document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
   $('#game').classList.remove('hidden');
   $('#btnNew').classList.remove('hidden');
+  $('#crew').classList.remove('hidden');
   $('#flash').innerHTML='';
   layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard();
 
@@ -783,6 +909,28 @@ $('#nameInput').addEventListener('input', ()=>{
   if(!$('#game').classList.contains('hidden')){ pushScore(); }
 });
 
+/* your-words dropdown */
+$('#wordsToggle').addEventListener('click', ()=>{
+  const box = $('#wordsBox'), open = box.classList.toggle('open');
+  $('#wordsBody').classList.toggle('hidden', !open);
+  $('#wordsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+});
+
+/* collapsed scoreboard <-> sheet */
+function openBoard(){ renderBoard(); renderNetNote(); $('#boardSheet').classList.remove('hidden'); }
+function closeBoard(){ $('#boardSheet').classList.add('hidden'); }
+$('#crew').addEventListener('click', openBoard);
+$('#boardClose').addEventListener('click', closeBoard);
+$('#boardSheet').addEventListener('click', (e)=>{ if(e.target === $('#boardSheet')) closeBoard(); });
+
+/* join dialog (arriving via an invite link) */
+$('#joinGo').addEventListener('click', ()=>{
+  const nm = $('#joinName').value.trim();
+  if(nm){ G.name = nm; localStorage.setItem('hc_name', nm); }
+  $('#joinDlg').close();
+  if(joinRoute){ const r = joinRoute; joinRoute = null; startGame(r.letters, r.center, r.room); }
+});
+
 /* live timer */
 setInterval(()=>{
   if($('#game').classList.contains('hidden') || !G.startedAt) return;
@@ -790,8 +938,11 @@ setInterval(()=>{
 }, 500);
 /* keep the "updated Xs ago" labels fresh on the scoreboard */
 setInterval(()=>{ if(!$('#game').classList.contains('hidden')) renderBoard(); }, 5000);
+/* live-sync safety net: re-pull the room in case a realtime event was missed */
+setInterval(()=>{ Net.refresh(); }, 3500);
 
 /* ---------- initial load ---------- */
+let joinRoute = null;   // pending invite route while the join dialog is open
 (function init(){
   buildSetupGrid();
   const savedName = localStorage.getItem('hc_name');
@@ -818,7 +969,18 @@ setInterval(()=>{ if(!$('#game').classList.contains('hidden')) renderBoard(); },
       const store = JSON.parse(localStorage.getItem('hc_shared_'+sig)||'{}');
       for(const [id,p] of Object.entries(store)){ if(id!==PLAYER_ID) G.players[id]=p; }
     }catch(e){}
-    startGame(route.letters, route.center, route.room);
+
+    // Joining someone's board via a link — let this player set their own name
+    // (rather than defaulting to "Player") before we announce them to the room.
+    joinRoute = route;
+    $('#joinName').value = savedName || '';
+    if(typeof $('#joinDlg').showModal === 'function'){
+      $('#joinDlg').showModal();
+    }else{
+      // very old browsers: skip the dialog, just start
+      joinRoute = null;
+      startGame(route.letters, route.center, route.room);
+    }
   }
 })();
 </script>
