@@ -50,6 +50,17 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
   a clipped `:active` brightness so the hex press state follows the hexagon
   shape (no square grey box).
 
+## Portable identity (player ID as an account key)
+- Identity = `hc_playerId` in localStorage (per browser, persists until the user
+  clears site data — the standard). ⋯ menu **My player ID** (`#idDlg`): copy your
+  ID, or paste one from another browser (`#useIdBtn`) to adopt it and reload as
+  that player. No accounts/passwords.
+- `hive_scores` now stores `letters`/`center` too, so a cloud row fully
+  reconstructs a board. `fetchCloudGames()` queries all rows for `player_id` and
+  `renderResume()` merges them with local boards (`mergeBoards` dedups by room /
+  puzzle). Net effect: paste your ID in a fresh browser → all your games appear
+  and resume on either device. Deliberately no in-room "claim" button (insecure).
+
 ## Resume / recent boards
 Every board's progress is saved in localStorage (`hc_game_<sig>`, sig = sorted
 letters + center). The home screen shows a **Resume a game** list
