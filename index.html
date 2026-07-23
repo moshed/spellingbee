@@ -350,9 +350,9 @@ function rankFor(score, max){
    file for the table + realtime setup.
    Leave blank to run without a backend (offline link-share).
    ============================================================ */
-const SUPABASE_URL      = "";               // e.g. "https://abcdefgh.supabase.co"
-const SUPABASE_ANON_KEY = "";               // your project's public anon/publishable key
-const SUPABASE_TABLE    = "miscellaneous";  // table that stores scoreboard rows
+const SUPABASE_URL      = "https://atqhfbaurrmivjarowco.supabase.co";  // Misc project
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0cWhmYmF1cnJtaXZqYXJvd2NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzODc2ODgsImV4cCI6MjA5NTk2MzY4OH0.buWqvUnwid4QEE6m9OFM7n1tu51mcogTc01oG7pdtJI";
+const SUPABASE_TABLE    = "hive_scores";    // table that stores scoreboard rows
 
 /* ============================================================
    Network layer — realtime shared scoreboard (Supabase)
@@ -825,11 +825,15 @@ setInterval(()=>{ if(!$('#game').classList.contains('hidden')) renderBoard(); },
 
 <!--
 ============================================================
- SUPABASE SETUP (one time)
+ SUPABASE SETUP — ALREADY DONE
 ============================================================
-1) In your Supabase project, open the SQL Editor and run:
+Wired to the "Misc" project (ref atqhfbaurrmivjarowco), table
+public.hive_scores. Tables in that project are namespaced per
+app (bus_, fec_, fin_, pin_, ...); this game owns the hive_ prefix.
 
-   create table if not exists public.miscellaneous (
+For reference, this is the SQL that was run:
+
+   create table if not exists public.hive_scores (
      room       text        not null,
      player_id  text        not null,
      name       text,
@@ -840,25 +844,19 @@ setInterval(()=>{ if(!$('#game').classList.contains('hidden')) renderBoard(); },
    );
 
    -- Row Level Security: allow this public game to read/write freely.
-   alter table public.miscellaneous enable row level security;
+   alter table public.hive_scores enable row level security;
 
-   create policy "hive read"   on public.miscellaneous for select using (true);
-   create policy "hive insert" on public.miscellaneous for insert with check (true);
-   create policy "hive update" on public.miscellaneous for update using (true) with check (true);
+   create policy "hive read"   on public.hive_scores for select using (true);
+   create policy "hive insert" on public.hive_scores for insert with check (true);
+   create policy "hive update" on public.hive_scores for update using (true) with check (true);
 
    -- Turn on realtime so scores stream to every player:
-   alter publication supabase_realtime add table public.miscellaneous;
-
-2) In this file, fill in SUPABASE_URL and SUPABASE_ANON_KEY near the
-   top of the <script> (Project Settings -> API in Supabase).
+   alter publication supabase_realtime add table public.hive_scores;
 
 Notes:
  - The anon key is meant to be public; RLS above governs access.
- - Prefer not to reuse a table you already rely on: this game writes
-   rows keyed by (room, player_id). If your existing "miscellaneous"
-   table has other columns/uses, point SUPABASE_TABLE at a new name.
  - To wipe old games periodically, delete rows older than N days, e.g.:
-     delete from public.miscellaneous where updated_at < now() - interval '30 days';
+     delete from public.hive_scores where updated_at < now() - interval '30 days';
 ============================================================
 -->
 </body>
