@@ -33,7 +33,7 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
   visible to room members, so a UI claim button can't be made secure.
 - **Overflow menu** (`#btnMenu` ⋯): Invite/copy link, Continue on another
   device, New puzzle, How to play. Scoring: 4-letter=1pt, +1/extra letter,
-  pangram +7 (`wordScore` = `len-3` +7).
+  pangram +7 (`wordScore`: 4-letter=1, else len, +7 — matches NYT exactly).
 - **Share = auto-copy** (`onShare`→`copyLink`): writes the link straight to the
   clipboard + toast; NO `navigator.share`/native sheet/popup. `ensureRoom()`
   lazily opens the shared room on first share.
@@ -77,7 +77,7 @@ committed in the repo, built offline = SCOWL American English tiers + common
 gap-fillers (real ∩ top-50k-frequency), with British spellings (offence, colour),
 abbreviations (conf, dict) and obscure junk (unconfounded, dari, ardri) removed.
 Keeps real uncommon words (diacritic, acridity, cycad, dyadic, caddy, radii).
-`fetchFullDict()` tries `words.json` → SCOWL CDN (`wordlist-english`) → the old
+Refined against community NYT answer lists (nedguthrie/spellingbee: valid + invalid word lists): subtracted NYT-rejected words (proper nouns, obscure, British) and added real modern words (defund, cofounded). ~109k words. `fetchFullDict()` tries `words.json` → SCOWL CDN (`wordlist-english`) → the old
 broad `an-array-of-english-words` → tiny offline `FALLBACK_WORDS`. Per-board valid
 sets cached in localStorage (key `v3`; bump to invalidate). NYT's own list is
 proprietary/unobtainable and random puzzles can't be validated from a past-answer
