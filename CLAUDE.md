@@ -18,9 +18,11 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
   clip-path `polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)`.
   Flower positions in `layoutFlower()`: top/bottom at ±HEXH, four diagonals at
   (±0.75·HEXW, ±0.5·HEXH), spacing factor `S=1.04` for a hairline gap.
-- **Live scoreboard on the top line** (`#scoreStrip`): ranked chips, your own
-  shows "`<score>` you", others show "`initial` `<score>`", updated live.
-  Tap any chip → `#boardSheet` for full standings + net status.
+- **Leaderboard = number line** (`#lbTrack`): players placed left→right by
+  score (`left = score/maxScore`), each shown as their score with initials
+  stacked beneath. Rank levels (RANKS pcts) are ticks along the line; reached
+  ticks + current level highlighted. Pins animate (`transition:left`). Tap the
+  strip → `#boardSheet` for full standings. Header is just logo + ⋯ menu now.
 - **Overflow menu** (`#btnMenu` ⋯): Invite/copy link, Continue on another
   device, New puzzle, How to play. Scoring: 4-letter=1pt, +1/extra letter,
   pangram +7 (`wordScore` = `len-3` +7).
