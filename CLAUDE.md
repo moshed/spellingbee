@@ -10,18 +10,26 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
 
 ## UI / layout
 - **Fit-to-screen** (no scroll on mobile): `.wrap` is a flex column,
-  `#game` fills height. Rows top→bottom: rank-dot progress bar, collapsible
-  "Your words …" dropdown, flash+entry line, hex flower (`flex:1`, centered),
-  pill controls (Delete / ↻ / Enter). `body.playing` hides the footer.
+  `#game` fills height. Rows top→bottom: header (score strip + ⋯ menu),
+  collapsible "Your words …" dropdown (label = rank · pts · words),
+  flash+entry line, hex flower (`flex:1`, centered), pill controls
+  (Delete / ↻ / Enter). `body.playing` hides the footer + logo word.
 - **Flat-top hexagons** (flat edge on top/bottom, points left/right) —
   clip-path `polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)`.
   Flower positions in `layoutFlower()`: top/bottom at ±HEXH, four diagonals at
   (±0.75·HEXW, ±0.5·HEXH), spacing factor `S=1.04` for a hairline gap.
-- **Collapsed scoreboard**: player initials as overlapping avatars in the
-  top-right (`#crew`), leader first, "+N" overflow. Tap opens `#boardSheet`
-  (full standings + timer + Invite/Share).
-- **Join flow**: arriving via an invite link opens `#joinDlg` so the joiner
-  sets their own name before being announced to the room (no more "Player").
+- **Live scoreboard on the top line** (`#scoreStrip`): ranked chips, your own
+  shows "`<score>` you", others show "`initial` `<score>`", updated live.
+  Tap any chip → `#boardSheet` for full standings + net status.
+- **Overflow menu** (`#btnMenu` ⋯): Invite/copy link, Continue on another
+  device, New puzzle, How to play. Scoring: 4-letter=1pt, +1/extra letter,
+  pangram +7 (`wordScore` = `len-3` +7).
+- **Share = auto-copy** (`onShare`→`copyLink`): writes the link straight to the
+  clipboard + toast; NO `navigator.share`/native sheet/popup. `ensureRoom()`
+  lazily opens the shared room on first share.
+- **Join flow**: a plain invite link opens `#joinDlg` so the joiner sets their
+  own name before being announced (no "Player"). A **handoff** link (`&me`,`&n`)
+  skips the prompt and resumes as the same player.
 - `CNAME` — `spellingbee.dancykier.com`.
 - Repo: `moshed/spellingbee` (public, renamed from `games`). Game was originally on branch
   `claude/hexagon-word-game-multiplayer-6d318g`; merged into `main`.
@@ -46,7 +54,21 @@ See config near the top of the `<script>` in `index.html`:
   postgres_changes payloads; on top of the realtime subscription, `Net.refresh()`
   re-pulls the room every 3.5s as a safety net so phone/desktop stay in sync
   even if a realtime event is dropped on a flaky network.
+- **Cross-device handoff.** `hive_scores.found jsonb` stores the player's word
+  list. `Net.upsert()` writes it; `Net.pullMine()` (called on join) adopts a
+  further-along cloud copy and recomputes score. "Continue on another device"
+  copies a link with `&me=<player_id>&n=<name>`; `adoptIdentityFromHash()` runs
+  BEFORE `PLAYER_ID` is read so the new device resumes as the same player.
 - Falls back to offline link-share mode if Supabase is unreachable.
+
+## Dictionary (the "confound not in word list" fix)
+- Word list fetched from `an-array-of-english-words` (~275k words) via jsDelivr/
+  unpkg. Earlier bug: one failed fetch → permanent fallback to a ~60-word list,
+  cached per board. Now: `fetchFullDict()` coalesces + retries (no permanent
+  give-up), `computeValidWords()` NEVER caches a fallback result and uses cache
+  key `v2`, and `ensureDictThenRecompute()` upgrades the board in the background
+  once the real dictionary loads. Letters may repeat freely (only membership is
+  checked), so `confound`/`confounded` validate normally.
 
 ### Schema (already provisioned)
 ```sql
