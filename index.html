@@ -54,15 +54,27 @@
   .dots .mk.cur{min-width:26px; height:26px; border-radius:999px; padding:0 6px; background:var(--accent);
     color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px}
 
-  /* ---- collapsed scoreboard (top-right initials) ---- */
-  .crew{flex:0 0 auto; cursor:pointer; -webkit-tap-highlight-color:transparent}
-  .crew .avatars{display:flex}
-  .crew .av{width:30px; height:30px; border-radius:50%; margin-left:-9px; border:2px solid var(--bg);
-    background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
-    font-size:11px; font-weight:800; letter-spacing:.3px}
-  .crew .av:first-child{margin-left:0}
-  .crew .av.me{background:var(--accent); color:var(--accent-ink)}
-  .crew .av.more{background:var(--panel2); color:var(--muted)}
+  /* ---- live scoreboard strip (top row, ranked, points) ---- */
+  body.playing .logo .word{display:none}
+  .scorestrip{flex:1 1 auto; min-width:0; display:flex; gap:8px; align-items:center;
+    overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none}
+  .scorestrip::-webkit-scrollbar{display:none}
+  .spill{flex:0 0 auto; display:inline-flex; align-items:center; gap:8px; padding:6px 12px;
+    border-radius:999px; background:var(--panel2); font-size:13px; cursor:pointer;
+    -webkit-tap-highlight-color:transparent}
+  .spill.me{background:var(--accent); color:var(--accent-ink)}
+  .spill .nm{font-weight:700; max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .spill.me .nm{font-weight:600; opacity:.85; text-transform:none}
+  .spill .pt{font-weight:800; font-variant-numeric:tabular-nums}
+  .scorestrip .empty{color:var(--muted); font-size:13px; white-space:nowrap}
+
+  /* ---- overflow menu (New / How to play) ---- */
+  .menuwrap{position:relative; flex:0 0 auto}
+  .menu{position:absolute; right:0; top:calc(100% + 6px); background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:6px; min-width:180px; z-index:65; box-shadow:0 14px 34px rgba(0,0,0,.45);
+    display:flex; flex-direction:column; gap:2px}
+  .menu button{width:100%; text-align:left; background:transparent; border:0; border-radius:8px; padding:11px 12px; font-weight:600}
+  .menu button:hover{background:var(--panel2); border-color:transparent}
 
   /* ---- your-words dropdown ---- */
   .words{border:1px solid var(--line); border-radius:14px; background:var(--panel); overflow:hidden}
@@ -142,11 +154,17 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="logo"><span class="dot"></span> Spelling Bee</div>
-    <div class="spacer"></div>
-    <button id="btnHelp" class="ghost" title="How to play">?</button>
-    <button id="btnNew" class="ghost hidden">New</button>
-    <div class="crew hidden" id="crew" title="Scoreboard"><div class="avatars" id="avatars"></div></div>
+    <div class="logo"><span class="dot"></span> <span class="word">Spelling Bee</span></div>
+    <div class="scorestrip" id="scoreStrip" title="Tap for full standings"></div>
+    <div class="menuwrap">
+      <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
+      <div class="menu hidden" id="menu">
+        <button id="btnShare" class="hidden">🔗 Invite / copy link</button>
+        <button id="btnHandoff" class="hidden">📱 Continue on another device</button>
+        <button id="btnNew" class="hidden">New puzzle</button>
+        <button id="btnHelp">How to play</button>
+      </div>
+    </div>
   </header>
 
   <!-- ================= SETUP ================= -->
@@ -172,13 +190,6 @@
 
   <!-- ================= GAME ================= -->
   <section id="game" class="game hidden">
-    <div class="topline">
-      <div class="progress">
-        <span class="rank" id="rankName">Beginner</span>
-        <div class="dots" id="rankDots"></div>
-      </div>
-    </div>
-
     <div class="words" id="wordsBox">
       <button class="words-head" id="wordsToggle" aria-expanded="false">
         <span id="wordsLabel">Your words …</span>
@@ -216,7 +227,7 @@
     </div>
     <div id="boardRows"></div>
     <div class="netnote muted" id="netNote"></div>
-    <button id="btnShare" class="primary" style="width:100%; margin-top:12px">🔗 Invite / Share</button>
+    <button id="btnShareSheet" class="primary" style="width:100%; margin-top:12px">🔗 Invite / copy link</button>
   </div>
 </div>
 
@@ -292,6 +303,19 @@ function getPlayerId(){
   if(!id){ id = 'p_' + Math.random().toString(36).slice(2,10) + '_' + (now()%100000); localStorage.setItem('hc_playerId', id); }
   return id;
 }
+// A "continue on another device" link carries our identity (&me) and name (&n).
+// Adopt them BEFORE the id is read, so this device resumes as the same player
+// and can pull its own saved progress back from the cloud. Seamless handoff.
+function adoptIdentityFromHash(){
+  try{
+    const h = location.hash.replace(/^#/,'');
+    if(!h) return;
+    const p = new URLSearchParams(h);
+    const me = p.get('me'); if(me) localStorage.setItem('hc_playerId', me);
+    const n  = p.get('n');  if(n)  localStorage.setItem('hc_name', n);
+  }catch(e){}
+}
+adoptIdentityFromHash();
 const PLAYER_ID = getPlayerId();
 
 /* ============================================================
@@ -320,34 +344,38 @@ const FALLBACK_WORDS = ("acre acer care cart cate cane rice race rate tear near 
   " ancient nictate reactant tantric tetanic teacart cantina").split(/\s+/);
 
 let _fullDict = null;      // Set of all english words (lazy)
-let _dictTried = false;
+let _dictPromise = null;   // in-flight fetch, so concurrent callers share one
 
 async function fetchFullDict(){
   if(_fullDict) return _fullDict;
-  if(_dictTried) return null;
-  _dictTried = true;
-  for(const url of DICT_SOURCES){
-    try{
-      const res = await fetch(url, {cache:'force-cache'});
-      if(!res.ok) continue;
-      const arr = await res.json();
-      _fullDict = new Set(arr);
-      return _fullDict;
-    }catch(e){ /* try next */ }
-  }
-  return null;
+  if(_dictPromise) return _dictPromise;         // coalesce concurrent callers
+  _dictPromise = (async ()=>{
+    for(const url of DICT_SOURCES){
+      try{
+        const res = await fetch(url, {cache:'force-cache'});
+        if(!res.ok) continue;
+        const arr = await res.json();
+        if(Array.isArray(arr) && arr.length > 1000){ _fullDict = new Set(arr); return _fullDict; }
+      }catch(e){ /* try next source */ }
+    }
+    _dictPromise = null;                         // all sources failed — allow a retry later
+    return null;
+  })();
+  return _dictPromise;
 }
 
-// Build the set of all valid words for a given puzzle.
+// Build the set of all valid words for a given puzzle. Bump the cache version
+// to invalidate any board that was cached from the tiny fallback list.
+const DICT_CACHE_VER = 'v2';
 async function computeValidWords(letters, center){
-  const key = 'hc_dict_' + [...letters].sort().join('') + '_' + center;
+  const key = 'hc_dict_' + DICT_CACHE_VER + '_' + [...letters].sort().join('') + '_' + center;
   const cached = localStorage.getItem(key);
   if(cached){ try{ return new Set(JSON.parse(cached)); }catch(e){} }
 
   const allow = new Set(letters);
   const passes = (w) => {
     if(w.length < 4 || !w.includes(center)) return false;
-    for(const ch of w){ if(!allow.has(ch)) return false; }
+    for(const ch of w){ if(!allow.has(ch)) return false; }   // letters may repeat freely
     return true;
   };
 
@@ -360,7 +388,9 @@ async function computeValidWords(letters, center){
     words = FALLBACK_WORDS.filter(w => passes(w));
   }
   words.sort();
-  try{ localStorage.setItem(key, JSON.stringify(words)); }catch(e){}
+  // NEVER cache the fallback result — otherwise one failed fetch poisons this
+  // board forever. Only persist a set built from the real dictionary.
+  if(dict){ try{ localStorage.setItem(key, JSON.stringify(words)); }catch(e){} }
   return new Set(words);
 }
 
@@ -448,9 +478,27 @@ const Net = {
     if(!this.live) return;
     const sb = await this.client();
     const row = { room:this.room, player_id:PLAYER_ID, name:(G.name||'Player'),
-                  score:G.score, words:G.found.length, updated_at:new Date().toISOString() };
+                  score:G.score, words:G.found.length, found:G.found,
+                  updated_at:new Date().toISOString() };
     const { error } = await sb.from(SUPABASE_TABLE).upsert(row, { onConflict:'room,player_id' });
     if(error) throw error;
+  },
+  // Pull our OWN saved row from the cloud (used on a fresh device via a handoff
+  // link) and adopt its progress if it's further along than what's local.
+  async pullMine(){
+    if(!this.room || !this.sb) return;
+    try{
+      const { data, error } = await this.sb.from(SUPABASE_TABLE)
+        .select('*').eq('room', this.room).eq('player_id', PLAYER_ID).maybeSingle();
+      if(error || !data) return;
+      const cloudFound = Array.isArray(data.found) ? data.found : [];
+      if(cloudFound.length >= G.found.length){
+        const set = new Set(G.found); cloudFound.forEach(w => set.add(w));
+        G.found = [...set];
+        G.score = G.found.reduce((s,w)=> s + wordScore(w, G.letters).points, 0);
+        if(data.name && !G.name) G.name = data.name;
+      }
+    }catch(e){ /* ignore */ }
   },
   // Polling safety-net: re-pull the room every few seconds so scores stay in
   // sync even if a realtime event is missed (flaky mobile networks, etc.).
@@ -580,26 +628,14 @@ function renderFound(){
 }
 function updateWordsLabel(){
   const n = G.found.length;
-  $('#wordsLabel').textContent = n ? `${n} word${n===1?'':'s'} · ${G.score} pts` : 'Your words …';
+  const r = rankFor(G.score, G.maxScore);
+  $('#wordsLabel').textContent = n
+    ? `${r.name} · ${G.score} pt${G.score===1?'':'s'} · ${n} word${n===1?'':'s'}`
+    : 'Your words …';
 }
 function renderScore(){
-  const r = rankFor(G.score, G.maxScore);
-  $('#rankName').textContent = r.name;
-  renderRankDots(r);
   updateWordsLabel();
-}
-function renderRankDots(r){
-  const wrap = $('#rankDots'); wrap.innerHTML='';
-  let curIdx = 0;
-  RANKS.forEach(([t],i)=>{ if(r.pct >= t) curIdx = i; });
-  RANKS.forEach(([t,name],i)=>{
-    if(i>0){ const seg=document.createElement('span'); seg.className='seg'; wrap.appendChild(seg); }
-    const mk = document.createElement('span');
-    mk.className = 'mk' + (i<curIdx?' done':'') + (i===curIdx?' cur':'') + (i===RANKS.length-1?' last':'');
-    mk.title = name;
-    if(i===curIdx) mk.textContent = G.score;
-    wrap.appendChild(mk);
-  });
+  renderBoard();   // your own chip on the score line reflects the new total
 }
 function initials(name){
   const s = (name||'').trim();
@@ -613,20 +649,20 @@ function renderBoard(){
     .map(([id,p])=>({id, ...p}))
     .sort((a,b)=> b.score - a.score || (a.updated-b.updated));
 
-  // collapsed crew (top-right initials, leader first)
-  const crew = $('#crew'); crew.classList.remove('hidden');
-  const av = $('#avatars'); av.innerHTML='';
-  entries.slice(0,3).forEach(p=>{
-    const d = document.createElement('div');
-    d.className = 'av' + (p.id===PLAYER_ID?' me':'');
-    d.textContent = initials(p.name);
-    d.title = (p.name||'Player') + ' · ' + (p.score||0);
-    av.appendChild(d);
+  // live scoreboard strip on the top line: your score ("5 you") plus each
+  // other player as their initial + score ("M 3"), ranked leader-first.
+  const strip = $('#scoreStrip'); strip.innerHTML='';
+  entries.forEach(p=>{
+    const mine = p.id === PLAYER_ID;
+    const chip = document.createElement('div');
+    chip.className = 'spill' + (mine?' me':'');
+    chip.innerHTML = mine
+      ? `<span class="pt">${p.score||0}</span><span class="nm">you</span>`
+      : `<span class="nm">${escapeHtml(initials(p.name))}</span><span class="pt">${p.score||0}</span>`;
+    chip.title = `${p.name||'Player'} — ${p.score||0} pts · ${p.words||0} words`;
+    chip.addEventListener('click', openBoard);
+    strip.appendChild(chip);
   });
-  if(entries.length > 3){
-    const m = document.createElement('div'); m.className='av more';
-    m.textContent = '+' + (entries.length-3); av.appendChild(m);
-  }
 
   // full standings (inside the sheet)
   const rows = $('#boardRows'); rows.innerHTML='';
@@ -730,34 +766,46 @@ function buildShareUrl(opts={}){
   p.set('l', G.letters.join(''));
   p.set('c', G.center);
   if(Net.room) p.set('r', Net.room);
-  if(opts.withScore){
+  if(opts.handoff){
+    // "continue on another device": carry our identity so the other device
+    // resumes as us and pulls our saved words back from the cloud.
+    p.set('me', PLAYER_ID);
+    if(G.name) p.set('n', G.name);
+  }else if(opts.withScore){
     p.set('s', b64urlEncode({i:PLAYER_ID, ...myEntry()}));
   }
   return base + '#' + p.toString();
 }
-async function onShare(){
-  // Make sure there's a room to invite people to.
-  if(!Net.room){
-    Net.room = randomRoom();
-    if(Net.configured()){
-      try{ await Net.join(Net.room); await Net.upsert(); }
-      catch(e){ Net.live = false; }   // keep the room id for offline link-share
-    }
-    renderNetNote();
-    history.replaceState(null,'', buildShareUrl());
+// Open a shared room (once) so links carry a live scoreboard.
+async function ensureRoom(){
+  if(Net.room) return;
+  Net.room = randomRoom();
+  if(Net.configured()){
+    try{ await Net.join(Net.room); await Net.upsert(); }
+    catch(e){ Net.live = false; }   // keep the room id for offline link-share
   }
-  // When live, others get our score via realtime, so no need to bake it into the link.
-  const url = buildShareUrl({withScore: !Net.live});
-  const shareData = {title:'Spelling Bee', text:'Beat my score in this Spelling Bee puzzle!', url};
-  try{
-    if(navigator.share){ await navigator.share(shareData); return; }
-  }catch(e){ /* fall through to copy */ }
+  renderNetNote();
+  history.replaceState(null,'', buildShareUrl());
+}
+// Copy a link directly to the clipboard — no native share sheet, no popup.
+async function copyLink(url, msg){
   try{
     await navigator.clipboard.writeText(url);
-    toast(Net.live ? 'Invite link copied — scores sync live!' : 'Score link copied — send it to your friends!');
+    toast(msg);
   }catch(e){
-    prompt('Copy this link:', url);
+    prompt('Copy this link:', url);   // absolute last resort if clipboard is blocked
   }
+}
+async function onShare(){
+  await ensureRoom();
+  // when live, others get our score over realtime, so no need to bake it in
+  const url = buildShareUrl({withScore: !Net.live});
+  copyLink(url, Net.live ? 'Invite link copied — scores sync live!' : 'Link copied — send it to your friends!');
+}
+async function onHandoff(){
+  await ensureRoom();
+  const url = buildShareUrl({handoff:true});
+  copyLink(url, 'Handoff link copied — open it on your other device to continue.');
 }
 
 /* ============================================================
@@ -770,7 +818,8 @@ function parseHash(){
   const l = (p.get('l')||'').toLowerCase();
   const c = (p.get('c')||'').toLowerCase();
   if(l.length!==7 || !c || !l.includes(c)) return null;
-  return {letters:l.split(''), center:c, room:p.get('r'), scoreBlob:p.get('s')};
+  return {letters:l.split(''), center:c, room:p.get('r'), scoreBlob:p.get('s'),
+          me:p.get('me'), name:p.get('n')};
 }
 
 async function startGame(letters, center, roomId){
@@ -797,8 +846,7 @@ async function startGame(letters, center, roomId){
   document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
   $('#game').classList.remove('hidden');
-  $('#btnNew').classList.remove('hidden');
-  $('#crew').classList.remove('hidden');
+  ['#btnNew','#btnShare','#btnHandoff'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
   layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard();
 
@@ -811,10 +859,16 @@ async function startGame(letters, center, roomId){
   if(wantRoom){
     Net.room = wantRoom;                 // keep the id even if the connection fails
     if(Net.configured()){
-      try{ await Net.join(wantRoom); await Net.upsert(); }  // load others + announce ourselves
-      catch(e){ Net.live = false; }
+      try{
+        await Net.join(wantRoom);        // load others
+        await Net.pullMine();            // resume our own words if a newer copy is in the cloud
+        await Net.upsert();              // announce ourselves
+      }catch(e){ Net.live = false; }
     }
   }
+  // pullMine may have merged in a further-along word set from another device
+  G.players[PLAYER_ID] = myEntry();
+  renderFound(); renderScore(); renderBoard();
   renderNetNote();
   history.replaceState(null,'', buildShareUrl());
 
@@ -825,6 +879,18 @@ async function startGame(letters, center, roomId){
   $('#flash').innerHTML='';
   renderScore();
   saveProgress();
+  // If the full dictionary wasn't available yet we're on the tiny fallback list;
+  // keep retrying in the background and upgrade the word list once it loads.
+  if(!_fullDict) ensureDictThenRecompute(G.roomKey);
+}
+
+async function ensureDictThenRecompute(forKey){
+  const dict = await fetchFullDict();
+  if(!dict){ setTimeout(()=>ensureDictThenRecompute(forKey), 4000); return; }  // retry
+  if(G.roomKey !== forKey) return;            // player moved to another puzzle
+  G.valid = await computeValidWords(G.letters, G.center);
+  G.maxScore = maxScoreOf(G.valid, G.letters);
+  renderScore();
 }
 
 /* ---------- setup screen helpers ---------- */
@@ -897,11 +963,25 @@ document.addEventListener('keydown', (e)=>{
 $('#btnEnter').addEventListener('click', submitWord);
 $('#btnDelete').addEventListener('click', delChar);
 $('#btnShuffle').addEventListener('click', shuffle);
-$('#btnShare').addEventListener('click', onShare);
 $('#btnRandom').addEventListener('click', randomPuzzle);
 $('#btnStartCustom').addEventListener('click', startCustom);
-$('#btnHelp').addEventListener('click', ()=> $('#help').showModal());
+
+/* overflow menu (⋯) */
+function closeMenu(){ $('#menu').classList.add('hidden'); $('#btnMenu').setAttribute('aria-expanded','false'); }
+$('#btnMenu').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const open = $('#menu').classList.toggle('hidden');
+  $('#btnMenu').setAttribute('aria-expanded', open ? 'false' : 'true');
+});
+document.addEventListener('click', (e)=>{
+  if(!$('#menu').classList.contains('hidden') && !e.target.closest('.menuwrap')) closeMenu();
+});
+$('#btnShare').addEventListener('click', ()=>{ closeMenu(); onShare(); });
+$('#btnShareSheet').addEventListener('click', onShare);
+$('#btnHandoff').addEventListener('click', ()=>{ closeMenu(); onHandoff(); });
+$('#btnHelp').addEventListener('click', ()=>{ closeMenu(); $('#help').showModal(); });
 $('#btnNew').addEventListener('click', async ()=>{
+  closeMenu();
   await Net.leave();
   location.href = location.origin + location.pathname;   // back to a clean setup
 });
@@ -918,10 +998,9 @@ $('#wordsToggle').addEventListener('click', ()=>{
   $('#wordsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
 });
 
-/* collapsed scoreboard <-> sheet */
+/* score-strip chip -> full standings sheet */
 function openBoard(){ renderBoard(); renderNetNote(); $('#boardSheet').classList.remove('hidden'); }
 function closeBoard(){ $('#boardSheet').classList.add('hidden'); }
-$('#crew').addEventListener('click', openBoard);
 $('#boardClose').addEventListener('click', closeBoard);
 $('#boardSheet').addEventListener('click', (e)=>{ if(e.target === $('#boardSheet')) closeBoard(); });
 
@@ -972,16 +1051,19 @@ let joinRoute = null;   // pending invite route while the join dialog is open
       for(const [id,p] of Object.entries(store)){ if(id!==PLAYER_ID) G.players[id]=p; }
     }catch(e){}
 
-    // Joining someone's board via a link — let this player set their own name
-    // (rather than defaulting to "Player") before we announce them to the room.
-    joinRoute = route;
-    $('#joinName').value = savedName || '';
-    if(typeof $('#joinDlg').showModal === 'function'){
-      $('#joinDlg').showModal();
-    }else{
-      // very old browsers: skip the dialog, just start
-      joinRoute = null;
+    // A handoff link (&me) is us resuming on another device — no name prompt,
+    // just restore and continue. A plain invite link prompts for a name.
+    if(route.me){
       startGame(route.letters, route.center, route.room);
+    }else{
+      joinRoute = route;
+      $('#joinName').value = savedName || '';
+      if(typeof $('#joinDlg').showModal === 'function'){
+        $('#joinDlg').showModal();
+      }else{
+        joinRoute = null;
+        startGame(route.letters, route.center, route.room);
+      }
     }
   }
 })();
