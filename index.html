@@ -178,7 +178,6 @@
       <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu hidden" id="menu">
         <button id="btnShare" class="hidden">🔗 Invite / copy link</button>
-        <button id="btnHandoff" class="hidden">📱 Continue on another device</button>
         <button id="btnRename" class="hidden">✏️ Change name</button>
         <button id="btnMyId">🔑 My player ID</button>
         <button id="btnNew" class="hidden">New puzzle</button>
@@ -922,11 +921,6 @@ async function onShare(){
   const url = buildShareUrl({withScore: !Net.live});
   copyLink(url, Net.live ? 'Invite link copied — scores sync live!' : 'Link copied — send it to your friends!');
 }
-async function onHandoff(){
-  await ensureRoom();
-  const url = buildShareUrl({handoff:true});
-  copyLink(url, 'Handoff link copied — open it on your other device to continue.');
-}
 
 /* ============================================================
    Boot / routing
@@ -967,7 +961,7 @@ async function startGame(letters, center, roomId){
   $('#setup').classList.add('hidden');
   $('#resume').classList.add('hidden');
   $('#game').classList.remove('hidden');
-  ['#btnNew','#btnShare','#btnHandoff','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
+  ['#btnNew','#btnShare','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
   layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard();
 
@@ -1099,7 +1093,6 @@ document.addEventListener('click', (e)=>{
 });
 $('#btnShare').addEventListener('click', ()=>{ closeMenu(); onShare(); });
 $('#btnShareSheet').addEventListener('click', onShare);
-$('#btnHandoff').addEventListener('click', ()=>{ closeMenu(); onHandoff(); });
 $('#btnHelp').addEventListener('click', ()=>{ closeMenu(); $('#help').showModal(); });
 $('#btnNew').addEventListener('click', async ()=>{
   closeMenu();
