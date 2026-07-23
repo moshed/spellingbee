@@ -180,6 +180,7 @@
         <button id="btnShare" class="hidden">🔗 Invite / copy link</button>
         <button id="btnHandoff" class="hidden">📱 Continue on another device</button>
         <button id="btnRename" class="hidden">✏️ Change name</button>
+        <button id="btnMyId">🔑 My player ID</button>
         <button id="btnNew" class="hidden">New puzzle</button>
         <button id="btnHelp">How to play</button>
       </div>
@@ -275,6 +276,25 @@
   <input id="joinName" maxlength="20" placeholder="Your name" style="width:100%">
   <div style="text-align:right; margin-top:16px">
     <button id="joinGo" class="primary">Join game</button>
+  </div>
+</dialog>
+
+<!-- My player ID dialog (portable identity across browsers) -->
+<dialog id="idDlg" class="dlg">
+  <h2 style="margin-top:0">Your player ID</h2>
+  <p class="muted" style="margin-top:0">This ID is your identity — it stays in this browser until you clear its data. Copy it and paste it into another browser to be the <b>same player</b> there, so your games and scores follow you.</p>
+  <div style="display:flex; gap:8px">
+    <input id="myIdField" readonly style="flex:1; font-family:ui-monospace,Menlo,monospace">
+    <button id="copyIdBtn" class="primary">Copy</button>
+  </div>
+  <hr style="border:none; border-top:1px solid var(--line); margin:16px 0">
+  <p class="muted" style="margin-top:0">Have an ID from another browser? Paste it here to continue as that player on this device.</p>
+  <div style="display:flex; gap:8px">
+    <input id="pasteIdField" placeholder="Paste an ID…" style="flex:1; font-family:ui-monospace,Menlo,monospace">
+    <button id="useIdBtn">Use ID</button>
+  </div>
+  <div style="text-align:right; margin-top:16px">
+    <button onclick="this.closest('dialog').close()" class="ghost">Close</button>
   </div>
 </dialog>
 
@@ -524,6 +544,7 @@ const Net = {
     const sb = await this.client();
     const row = { room:this.room, player_id:PLAYER_ID, name:(G.name||'Player'),
                   score:G.score, words:G.found.length, found:G.found,
+                  letters:G.letters.join(''), center:G.center,
                   updated_at:new Date().toISOString() };
     const { error } = await sb.from(SUPABASE_TABLE).upsert(row, { onConflict:'room,player_id' });
     if(error) throw error;
@@ -1107,6 +1128,27 @@ $$('#wordSort button').forEach(b=>{
     renderFound();
   });
 });
+/* portable player ID — copy yours / paste one from another browser */
+$('#btnMyId').addEventListener('click', ()=>{
+  closeMenu();
+  $('#myIdField').value = PLAYER_ID;
+  $('#pasteIdField').value = '';
+  $('#idDlg').showModal();
+});
+$('#copyIdBtn').addEventListener('click', ()=> copyLink(PLAYER_ID, 'Player ID copied — paste it into your other browser.'));
+$('#useIdBtn').addEventListener('click', ()=>{
+  const id = $('#pasteIdField').value.trim();
+  if(!id) return;
+  if(!/^[\w-]{4,64}$/.test(id)){ toast("That doesn't look like a valid ID."); return; }
+  if(id === PLAYER_ID){ $('#idDlg').close(); return; }
+  localStorage.setItem('hc_playerId', id);
+  // reload as that player: into the current board if playing (pullMine restores
+  // it), otherwise to the home screen where the cloud resume list will load
+  location.href = (!$('#game').classList.contains('hidden'))
+    ? buildShareUrl()
+    : (location.origin + location.pathname);
+});
+
 /* change display name */
 $('#btnRename').addEventListener('click', ()=>{
   closeMenu();
@@ -1138,14 +1180,13 @@ $('#joinGo').addEventListener('click', ()=>{
   if(joinRoute){ const r = joinRoute; joinRoute = null; startGame(r.letters, r.center, r.room); }
 });
 
-/* resume list on the home screen */
-function renderResume(){
-  const boards = listRecentBoards();
+/* resume list on the home screen — local boards + this player's cloud games */
+function drawResume(boards){
   const sec = $('#resume'), list = $('#resumeList');
   if(!boards.length){ sec.classList.add('hidden'); return; }
   sec.classList.remove('hidden');
   list.innerHTML = '';
-  boards.slice(0,8).forEach(d=>{
+  boards.slice(0,12).forEach(d=>{
     const letters = (d.letters||[]).map(l => l===d.center
       ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
     const btn = document.createElement('button');
@@ -1154,6 +1195,37 @@ function renderResume(){
       `<span class="rl-meta">${d.score||0} pts · ${(d.found||[]).length} words · ${timeAgo(d.updated||d.startedAt)}</span>`;
     btn.addEventListener('click', ()=> startGame(d.letters, d.center, d.room));
     list.appendChild(btn);
+  });
+}
+// Merge boards by room (or by puzzle when no room), keeping the richer copy.
+function mergeBoards(...sources){
+  const by = new Map();
+  sources.flat().forEach(d=>{
+    if(!d || !d.letters || !d.center) return;
+    const key = d.room || ([...d.letters].sort().join('')+'.'+d.center);
+    const cur = by.get(key);
+    if(!cur || (d.updated||0) > (cur.updated||0) || (d.score||0) > (cur.score||0)) by.set(key, d);
+  });
+  return [...by.values()].sort((a,b)=> (b.updated||0)-(a.updated||0));
+}
+async function fetchCloudGames(){
+  if(!Net.configured()) return [];
+  try{
+    const sb = await Net.client();
+    const { data, error } = await sb.from(SUPABASE_TABLE).select('*').eq('player_id', PLAYER_ID);
+    if(error) return [];
+    return (data||[]).filter(r => r.letters && r.center).map(r=>({
+      letters: String(r.letters).split(''), center: r.center, room: r.room,
+      score: r.score||0, found: Array.isArray(r.found)?r.found:[], name: r.name,
+      updated: r.updated_at ? Date.parse(r.updated_at) : 0
+    }));
+  }catch(e){ return []; }
+}
+function renderResume(){
+  const local = listRecentBoards();
+  drawResume(mergeBoards(local));                 // show local instantly
+  fetchCloudGames().then(cloud=>{                 // then fold in this player's cloud games
+    if(cloud.length) drawResume(mergeBoards(local, cloud));
   });
 }
 
