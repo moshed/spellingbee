@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>Spelling Bee</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000000'/%3E%3Cpath d='M16 3 30 10 30 22 16 29 2 22 2 10Z' fill='%23f7da21'/%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000000'/%3E%3Cpath d='M30 16 23 28.1 9 28.1 2 16 9 3.9 23 3.9Z' fill='%23f7da21'/%3E%3C/svg%3E" />
 <meta name="description" content="A hexagonal word game. Make as many words as you can using the yellow center letter. Share a link to play against friends." />
 <meta name="theme-color" content="#0f1115" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -1389,14 +1389,14 @@ function renderResume(){
 let _allGames = [];
 function classifyGame(d){
   const others = (d.players||[]).filter(p => p.id !== PLAYER_ID);
-  const multi = others.length > 0;
+  const multi = others.length > 0;                         // someone else joined
   const best = others.reduce((m,p)=> Math.max(m, p.score||0), 0);
   const my = d.score||0;
-  const margin = Math.max(6, Math.round(0.08*Math.max(my,best,1)));
+  const margin = 0.05 * Math.max(my, best, 1);             // "tight" = within 5%
   return {
     ...d, multi,
-    winning: multi && my >= best,
-    losing:  multi && my <  best,
+    winning: multi && my >= best,                          // I'm in the lead (or tied)
+    losing:  multi && my <  best,                          // I'm not in the lead
     close:   multi && Math.abs(my-best) <= margin
   };
 }
@@ -1419,13 +1419,13 @@ async function fetchAllMyGames(){
       updated: r.updated_at ? Date.parse(r.updated_at) : 0,
       players: roster.filter(o=>o.room===r.room).map(o=>({id:o.player_id, name:o.name, score:o.score||0}))
     }));
-    // merge cloud + local by room/puzzle, richer copy wins
+    // Cloud copies carry the roster (who joined), so they MUST win — a local
+    // copy has no roster and would wrongly mark a multiplayer game as solo.
+    // Local only fills in games that aren't in the cloud at all.
+    const keyOf = d => d.room || ([...d.letters].sort().join('')+'.'+d.center);
     const by = new Map();
-    [...cloud, ...local].forEach(d=>{
-      const key = d.room || ([...d.letters].sort().join('')+'.'+d.center);
-      const cur = by.get(key);
-      if(!cur || (d.players?.length||0) > (cur.players?.length||0) || (d.updated||0) > (cur.updated||0)) by.set(key, d);
-    });
+    cloud.forEach(d=> by.set(keyOf(d), d));
+    local.forEach(d=>{ const k = keyOf(d); if(!by.has(k)) by.set(k, d); });
     return [...by.values()].sort((a,b)=>(b.updated||0)-(a.updated||0)).map(classifyGame);
   }catch(e){ return local.map(classifyGame); }
 }
