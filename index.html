@@ -239,7 +239,7 @@
     <li>Build words from the seven letters.</li>
     <li>Every word must contain the <b style="color:var(--accent)">center letter</b>.</li>
     <li>Words are at least <b>4 letters</b>; letters may repeat.</li>
-    <li><b>Scoring:</b> 4-letter word = 1 point; longer words score 1 point per letter. A <b>pangram</b> (uses all 7 letters) earns a <b>+7 bonus</b>.</li>
+    <li><b>Scoring:</b> a 4-letter word = 1 point, then <b>+1 for each extra letter</b> (5 letters = 2, 6 = 3, …). A <b>pangram</b> (uses all 7 letters) earns an extra <b>+7</b>.</li>
     <li><b>Play together:</b> tap <b>Invite / Share</b> and send the link. Everyone plays the same board and the scoreboard shows each player's score and when they last updated — great for playing at the same time <i>or</i> whenever you each get a chance.</li>
   </ul>
   <form method="dialog" style="text-align:right"><button class="primary">Got it</button></form>
@@ -368,7 +368,9 @@ async function computeValidWords(letters, center){
    Scoring (Spelling-Bee style)
    ============================================================ */
 function wordScore(w, letters){
-  let base = (w.length === 4) ? 1 : w.length;
+  // 4-letter word = 1 point (minimum); every extra letter adds +1.
+  // A pangram (uses all 7 letters) earns an additional +7.
+  let base = w.length - 3;
   const isPan = new Set(w).size === 7 && letters.every(l => w.includes(l));
   if(isPan) base += 7;
   return {points: base, pangram: isPan};
