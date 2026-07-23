@@ -6,16 +6,38 @@
 <title>Spelling Bee</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000000'/%3E%3Cpath d='M16 3 30 10 30 22 16 29 2 22 2 10Z' fill='%23f7da21'/%3E%3C/svg%3E" />
 <meta name="description" content="A hexagonal word game. Make as many words as you can using the yellow center letter. Share a link to play against friends." />
+<meta name="theme-color" content="#0f1115" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Spelling Bee" />
+<script>try{var _t=localStorage.getItem('hc_theme');if(_t&&_t!=='auto')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <style>
-  :root{
+  :root, :root[data-theme="dark"]{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222c; --ink:#f4f6fb; --muted:#9aa4b6;
     --line:#2a2f3a; --accent:#f7da21; --accent-ink:#141414; --good:#3fb950; --bad:#f0616d;
     --hex:#e8ebf2; --hex-ink:#1a1d24;
+    --bg-grad:radial-gradient(1200px 700px at 70% -10%, #1b2030 0%, var(--bg) 55%);
+  }
+  /* light palette — applied via manual toggle (data-theme) or system default */
+  :root[data-theme="light"]{
+    --bg:#ffffff; --panel:#f6f7f9; --panel2:#eceef1; --ink:#15181f; --muted:#66707e;
+    --line:#e2e6ec; --accent:#f7da21; --accent-ink:#141414; --good:#1a7f37; --bad:#d1242f;
+    --hex:#e6e8ec; --hex-ink:#15181f;
+    --bg-grad:radial-gradient(1200px 700px at 70% -10%, #fff9db 0%, var(--bg) 60%);
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#ffffff; --panel:#f6f7f9; --panel2:#eceef1; --ink:#15181f; --muted:#66707e;
+      --line:#e2e6ec; --accent:#f7da21; --accent-ink:#141414; --good:#1a7f37; --bad:#d1242f;
+      --hex:#e6e8ec; --hex-ink:#15181f;
+      --bg-grad:radial-gradient(1200px 700px at 70% -10%, #fff9db 0%, var(--bg) 60%);
+    }
   }
   *{box-sizing:border-box}
   html,body{margin:0; height:100%; overflow:hidden; overscroll-behavior:none}
   body{
-    background:radial-gradient(1200px 700px at 70% -10%, #1b2030 0%, var(--bg) 55%);
+    background:var(--bg-grad);
     color:var(--ink); font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-text-size-adjust:100%;
     touch-action:pan-y;                        /* allow vertical scroll only — no zoom/pan-x */
@@ -163,6 +185,7 @@
   .setup .lettersgrid{display:flex; gap:8px; flex-wrap:wrap; margin:12px 0}
   .setup .lettersgrid input{width:52px; height:52px; text-align:center; font-size:22px; text-transform:uppercase; font-weight:800}
   .setup .lettersgrid input.center{border-color:var(--accent); box-shadow:0 0 0 2px rgba(247,218,33,.25)}
+  .setup .lettersgrid input:focus{border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.45); outline:none}
   .resume-row{display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;
     text-align:left; background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
   .resume-row:hover{border-color:#3a4150}
@@ -188,7 +211,9 @@
       <div class="menu hidden" id="menu">
         <button id="btnShare" class="hidden">🔗 Invite / copy link</button>
         <button id="btnRename" class="hidden">✏️ Change name</button>
+        <button id="btnGames">🎮 Previous games</button>
         <button id="btnMyId">🔑 My player ID</button>
+        <button id="btnTheme">🌓 Theme: Auto</button>
         <button id="btnNew" class="hidden">New puzzle</button>
         <button id="btnHelp">How to play</button>
       </div>
@@ -217,7 +242,7 @@
 
     <div class="row2" style="margin-top:6px">
       <button id="btnRandom" class="primary">🎲 Random puzzle</button>
-      <span class="muted">or type your own 7 letters (tap one to mark it the center):</span>
+      <span class="muted">or type your own 7 letters — the first one is the center:</span>
     </div>
 
     <div class="lettersgrid" id="lettersGrid"></div>
@@ -1129,26 +1154,29 @@ async function ensureDictThenRecompute(forKey){
 }
 
 /* ---------- setup screen helpers ---------- */
-let centerIdx = 3;  // which of the 7 setup boxes is the center
+const centerIdx = 0;  // the FIRST box is always the center letter
 function buildSetupGrid(){
   const g = $('#lettersGrid'); g.innerHTML='';
   for(let i=0;i<7;i++){
     const inp = document.createElement('input');
     inp.maxLength = 1; inp.dataset.i = i;
+    if(i===0) inp.classList.add('center');   // first box = center, always
     inp.addEventListener('input', ()=>{
       inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toLowerCase();
       if(inp.value && i<6){ const nx = g.children[i+1]; if(nx) nx.focus(); }
     });
-    inp.addEventListener('focus', ()=>{ /* click marks center via dblclick/click below */ });
-    inp.addEventListener('click', ()=>{ setCenterIdx(i); });
+    // Backspace across boxes: empty box + Backspace jumps to the previous box
+    // and clears it, so you can delete letter-by-letter from the end.
+    inp.addEventListener('keydown', (e)=>{
+      if(e.key==='Backspace' && !inp.value){
+        e.preventDefault();
+        const prev = g.children[i-1];
+        if(prev){ prev.focus(); prev.value=''; }
+      }
+    });
     g.appendChild(inp);
   }
-  setCenterIdx(centerIdx);
-}
-function setCenterIdx(i){
-  centerIdx = i;
-  $$('#lettersGrid input').forEach((el,idx)=> el.classList.toggle('center', idx===centerIdx));
-  $('#setupHint').textContent = 'Center letter = box #' + (centerIdx+1) + ' (highlighted). Tap another box to change it.';
+  $('#setupHint').textContent = 'The first box (yellow) is the center letter — every word must use it.';
 }
 async function randomPuzzle(){
   $('#btnRandom').disabled = true;
@@ -1232,6 +1260,35 @@ $('#wordsToggle').addEventListener('click', ()=>{
   $('#wordsBody').classList.toggle('hidden', !open);
   $('#wordsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
 });
+/* ---------- theme (auto / light / dark) ---------- */
+const THEMES = ['auto','light','dark'];
+function currentTheme(){ return localStorage.getItem('hc_theme') || 'auto'; }
+function updateThemeColor(){
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0f1115';
+  const m = document.querySelector('meta[name="theme-color"]');
+  if(m) m.setAttribute('content', bg);
+}
+function applyTheme(mode){
+  if(mode==='auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', mode);
+  localStorage.setItem('hc_theme', mode);
+  $('#btnTheme').textContent = '🌓 Theme: ' + mode[0].toUpperCase() + mode.slice(1);
+  updateThemeColor();
+}
+$('#btnTheme').addEventListener('click', ()=>{
+  const next = THEMES[(THEMES.indexOf(currentTheme())+1) % THEMES.length];
+  applyTheme(next);   // keep menu open so you can see the change; don't closeMenu()
+});
+// keep the browser chrome colour in sync when the system theme flips (auto mode)
+try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ if(currentTheme()==='auto') updateThemeColor(); }); }catch(e){}
+applyTheme(currentTheme());
+
+/* ---------- previous games (reachable from anywhere) ---------- */
+$('#btnGames').addEventListener('click', ()=>{
+  closeMenu();
+  location.href = location.origin + location.pathname + '#home';   // go home, show the list
+});
+
 /* resume list collapse/expand (keeps the home screen compact) */
 $('#resumeToggle').addEventListener('click', ()=>{
   const box = $('#resume'), open = box.classList.toggle('open');
@@ -1306,6 +1363,11 @@ function drawResume(boards){
   if(!boards.length){ sec.classList.add('hidden'); return; }
   sec.classList.remove('hidden');
   $('#resumeLabel').textContent = 'Previous games (' + boards.length + ')';
+  if(location.hash === '#home'){   // arrived here to see the list — open it
+    sec.classList.add('open');
+    $('#resumeBody').classList.remove('hidden');
+    $('#resumeToggle').setAttribute('aria-expanded','true');
+  }
   list.innerHTML = '';
   boards.slice(0,12).forEach(d=>{
     const letters = (d.letters||[]).map(l => l===d.center
@@ -1408,9 +1470,10 @@ let joinRoute = null;   // pending invite route while the join dialog is open
         startGame(route.letters, route.center, route.room);
       }
     }
-  }else{
+  }else if(location.hash !== '#home'){
     // No board in the URL — if the hash was lost but we have an active game,
     // resume it automatically (refresh should never strand you on the menu).
+    // '#home' is the explicit "show me the menu / previous games" signal.
     const lastKey = localStorage.getItem('hc_lastActive');
     const last = lastKey && loadProgress(lastKey);
     if(last && last.letters && last.center){
