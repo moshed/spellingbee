@@ -48,7 +48,9 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
 - **Touch UX**: `touch-action:manipulation` on body kills double-tap-zoom (pinch
   still works); `-webkit-tap-highlight-color:transparent` on `.hex`/buttons +
   a clipped `:active` brightness so the hex press state follows the hexagon
-  shape (no square grey box).
+  shape (no square grey box). Page never scrolls/zooms: html/body overflow
+  hidden, `body.playing` touch-action:none, viewport user-scalable=no; only the
+  word-list dropdown & scoreboard sheet scroll internally (touch-action:pan-y).
 
 ## Portable identity (player ID as an account key)
 - Identity = `hc_playerId` in localStorage (per browser, persists until the user
@@ -69,12 +71,18 @@ letters + center). The home screen shows a **Resume a game** list
 New puzzle no longer strands the old one. Cross-*device* resume is the separate
 handoff link (identity in `&me`).
 
-## Where the words come from
-NOT the DB. The word bank is `an-array-of-english-words` (~275k) fetched from a
-CDN at runtime, filtered per board, cached in the browser (localStorage `v2` +
-HTTP cache). Misc DB only holds scoreboard rows. If a word like `fend`/`confound`
-is rejected, it's the stale fallback cache — fixed by the dictionary robustness
-changes above.
+## Where the words come from (curated, NYT-closer)
+NOT the DB. Primary source is a **same-origin curated `words.json`** (112k words)
+committed in the repo, built offline = SCOWL American English tiers + common
+gap-fillers (real ∩ top-50k-frequency), with British spellings (offence, colour),
+abbreviations (conf, dict) and obscure junk (unconfounded, dari, ardri) removed.
+Keeps real uncommon words (diacritic, acridity, cycad, dyadic, caddy, radii).
+`fetchFullDict()` tries `words.json` → SCOWL CDN (`wordlist-english`) → the old
+broad `an-array-of-english-words` → tiny offline `FALLBACK_WORDS`. Per-board valid
+sets cached in localStorage (key `v3`; bump to invalidate). NYT's own list is
+proprietary/unobtainable and random puzzles can't be validated from a past-answer
+archive, so this is an approximation — to rebuild words.json see git history of
+the build step (SCOWL ∪ (an-array ∩ freq50k − british-only), a-z, len≥4).
 - `CNAME` — `spellingbee.dancykier.com`.
 - Repo: `moshed/spellingbee` (public, renamed from `games`). Game was originally on branch
   `claude/hexagon-word-game-multiplayer-6d318g`; merged into `main`.
