@@ -78,6 +78,7 @@
   .lbname{position:absolute; top:40px; transform:translateX(-50%); font-size:10px; font-weight:700;
     color:var(--muted); white-space:nowrap; line-height:1; transition:left .3s ease}
   .lbname.me{color:var(--ink)}
+  .lbtrack .lblines{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible}
 
   /* ---- overflow menu (New / How to play) ---- */
   .menuwrap{position:relative; flex:0 0 auto}
@@ -830,20 +831,41 @@ function renderBoard(){
     track.appendChild(bub);
   });
 
-  // Initials labels: spread horizontally so they never overlap (the numbers
-  // stay put; only the labels move). Forward push, clamp back inside [0,1].
-  const GAP = 0.14;                                  // min horizontal gap (fraction of the line)
-  const pos = groups.map(g => g.pct);
-  for(let i=1;i<pos.length;i++){ if(pos[i] < pos[i-1]+GAP) pos[i] = pos[i-1]+GAP; }
-  const over = pos.length ? pos[pos.length-1]-1 : 0;
-  if(over>0){ for(let i=0;i<pos.length;i++) pos[i]-=over; }
-  for(let i=pos.length-2;i>=0;i--){ if(pos[i] > pos[i+1]-GAP) pos[i] = pos[i+1]-GAP; }
-  if(pos.length && pos[0]<0) pos[0]=0;
-  groups.forEach((g,i)=>{
+  // Initials labels: each sits under its own bubble. ONLY move a label if it
+  // would overlap the one to its right — process leader→down, so the leader (and
+  // any label with room) stays put and only the crowded one behind slides left,
+  // with a connector line back to its bubble.
+  const GAP = 0.13;                                   // min horizontal gap (fraction of the line)
+  const desc = groups.slice().sort((a,b)=> b.pct - a.pct);
+  let prevX = Infinity;
+  desc.forEach(g=>{
+    let x = g.pct;
+    if(x > prevX - GAP) x = prevX - GAP;              // too close to the label on its right → slide left
+    if(x < 0) x = 0;
+    g.labelX = x;
+    g.moved = Math.abs(x - g.pct) > 0.002;
+    prevX = x;
+  });
+  // connector lines for the labels we had to slide
+  const moved = desc.filter(g => g.moved);
+  if(moved.length){
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS,'svg');
+    svg.setAttribute('class','lblines'); svg.setAttribute('viewBox','0 0 100 56'); svg.setAttribute('preserveAspectRatio','none');
+    moved.forEach(g=>{
+      const ln = document.createElementNS(NS,'line');
+      ln.setAttribute('x1',(g.pct*100).toFixed(2));    ln.setAttribute('y1','31');   // bubble
+      ln.setAttribute('x2',(g.labelX*100).toFixed(2)); ln.setAttribute('y2','40');   // label
+      ln.setAttribute('stroke','var(--muted)'); ln.setAttribute('stroke-width','1'); ln.setAttribute('vector-effect','non-scaling-stroke');
+      svg.appendChild(ln);
+    });
+    track.appendChild(svg);
+  }
+  groups.forEach(g=>{
     const mine = g.ps.some(p => p.id === PLAYER_ID);
     const lab = document.createElement('div');
     lab.className = 'lbname' + (mine?' me':'');
-    lab.style.left = (Math.max(0,Math.min(1,pos[i]))*100)+'%';
+    lab.style.left = ((g.labelX!=null?g.labelX:g.pct)*100)+'%';
     lab.textContent = g.ps.map(p => p.id===PLAYER_ID ? 'you' : initials(p.name)).join(' ');
     track.appendChild(lab);
   });
