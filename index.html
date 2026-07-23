@@ -198,7 +198,7 @@
   <!-- ============== RESUME (your saved boards) — collapsed ============== -->
   <section id="resume" class="words hidden" style="margin-bottom:14px">
     <button class="words-head" id="resumeToggle" aria-expanded="false">
-      <span id="resumeLabel">Resume a game</span>
+      <span id="resumeLabel">Previous games</span>
       <span class="chev">⌄</span>
     </button>
     <div class="words-body hidden" id="resumeBody">
@@ -1305,15 +1305,16 @@ function drawResume(boards){
   const sec = $('#resume'), list = $('#resumeList');
   if(!boards.length){ sec.classList.add('hidden'); return; }
   sec.classList.remove('hidden');
-  $('#resumeLabel').textContent = 'Resume a game (' + boards.length + ')';
+  $('#resumeLabel').textContent = 'Previous games (' + boards.length + ')';
   list.innerHTML = '';
   boards.slice(0,12).forEach(d=>{
     const letters = (d.letters||[]).map(l => l===d.center
       ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
+    const multi = d.room ? '👥 ' : '';   // a shared/joined multiplayer game
     const btn = document.createElement('button');
     btn.className = 'resume-row';
     btn.innerHTML = `<span class="rl-letters">${letters}</span>`+
-      `<span class="rl-meta">${d.score||0} pts · ${(d.found||[]).length} words · ${timeAgo(d.updated||d.startedAt)}</span>`;
+      `<span class="rl-meta">${multi}${d.score||0} pts · ${(d.found||[]).length} words · ${timeAgo(d.updated||d.startedAt)}</span>`;
     btn.addEventListener('click', ()=> startGame(d.letters, d.center, d.room));
     list.appendChild(btn);
   });
