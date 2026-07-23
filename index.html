@@ -203,9 +203,11 @@
   .resume-row .rl-letters{font-weight:800; letter-spacing:3px; text-transform:uppercase}
   .resume-row .rl-meta{color:var(--muted); font-size:13px; white-space:nowrap}
   /* previous-games modal */
-  .gfilters{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px}
-  .gfilters button{padding:6px 12px; border-radius:999px; background:transparent; border:1px solid var(--line); font-size:13px; font-weight:700; color:var(--muted)}
-  .gfilters button.active{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+  .gfilters{display:flex; flex-direction:column; gap:10px; margin-bottom:14px}
+  .gfgroup{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
+  .gflabel{width:100%; font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px}
+  .gfgroup button{padding:6px 12px; border-radius:999px; background:transparent; border:1px solid var(--line); font-size:13px; font-weight:700; color:var(--muted)}
+  .gfgroup button.active{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
   .game-row{display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--panel2);
     border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
   .game-row .g-letters{font-weight:800; letter-spacing:3px; text-transform:uppercase}
@@ -364,12 +366,17 @@
     <button onclick="this.closest('dialog').close()" class="ghost">✕</button>
   </div>
   <div class="gfilters" id="gamesFilters">
-    <button data-f="all" class="active">All</button>
-    <button data-f="solo">Solo</button>
-    <button data-f="multi">Multiplayer</button>
-    <button data-f="winning">Winning</button>
-    <button data-f="losing">Losing</button>
-    <button data-f="close">Close</button>
+    <div class="gfgroup">
+      <span class="gflabel">Type</span>
+      <button data-g="type" data-v="solo">Solo</button>
+      <button data-g="type" data-v="multi">Multiplayer</button>
+    </div>
+    <div class="gfgroup">
+      <span class="gflabel">Standing</span>
+      <button data-g="stand" data-v="winning">Winning</button>
+      <button data-g="stand" data-v="close">Close</button>
+      <button data-g="stand" data-v="losing">Losing</button>
+    </div>
   </div>
   <div id="gamesList" style="max-height:60vh; overflow-y:auto; touch-action:pan-y"></div>
 </dialog>
@@ -1297,9 +1304,10 @@ applyTheme(currentTheme());
 
 /* ---------- previous games — full filterable list ---------- */
 $('#btnGames').addEventListener('click', ()=>{ closeMenu(); openGamesModal(); });
+// multi-select chips within each group (Type / Standing)
 $$('#gamesFilters button').forEach(b=> b.addEventListener('click', ()=>{
-  $$('#gamesFilters button').forEach(x=> x.classList.toggle('active', x===b));
-  drawGames(b.dataset.f);
+  b.classList.toggle('active');
+  drawGames();
 }));
 /* sort the found-words list */
 $$('#wordSort button').forEach(b=>{
@@ -1421,14 +1429,21 @@ async function fetchAllMyGames(){
     return [...by.values()].sort((a,b)=>(b.updated||0)-(a.updated||0)).map(classifyGame);
   }catch(e){ return local.map(classifyGame); }
 }
-function drawGames(filter){
+function drawGames(){
   const list = $('#gamesList');
-  let games = _allGames;
-  if(filter==='solo')      games = games.filter(g=>!g.multi);
-  else if(filter==='multi')games = games.filter(g=>g.multi);
-  else if(filter==='winning')games = games.filter(g=>g.winning);
-  else if(filter==='losing') games = games.filter(g=>g.losing);
-  else if(filter==='close')  games = games.filter(g=>g.close);
+  const types  = $$('#gamesFilters button[data-g="type"].active').map(b=>b.dataset.v);
+  const stands = $$('#gamesFilters button[data-g="stand"].active').map(b=>b.dataset.v);
+  let games = _allGames.filter(g=>{
+    if(types.length && !types.includes(g.multi ? 'multi' : 'solo')) return false;
+    if(stands.length){                                  // standing only applies to multiplayer games
+      if(!g.multi) return false;
+      const ok = (g.winning && stands.includes('winning')) ||
+                 (g.close   && stands.includes('close'))   ||
+                 (g.losing  && stands.includes('losing'));
+      if(!ok) return false;
+    }
+    return true;
+  });
   list.innerHTML = '';
   if(!games.length){ list.innerHTML = '<div class="empty">No games here yet.</div>'; return; }
   games.forEach(g=>{
@@ -1451,10 +1466,10 @@ function drawGames(filter){
 }
 async function openGamesModal(){
   $('#gamesList').innerHTML = '<div class="empty">Loading…</div>';
-  $$('#gamesFilters button').forEach(x=> x.classList.toggle('active', x.dataset.f==='all'));
+  $$('#gamesFilters button').forEach(x=> x.classList.remove('active'));   // no filter = show all
   $('#gamesModal').showModal();
   _allGames = await fetchAllMyGames();
-  drawGames('all');
+  drawGames();
 }
 
 /* live timer */
