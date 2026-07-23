@@ -94,8 +94,8 @@
   /* each player = a score bubble with their initial directly underneath, placed
      by score. Tied players share one bubble; close players drop to a lower lane
      so nothing overlaps and it's obvious who's ahead (furthest right). */
-  .pin{position:absolute; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
-    gap:3px; transition:left .35s ease, top .2s ease}
+  .pin{position:absolute; top:24px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
+    gap:3px; transition:left .35s ease}
   .pin .pnum{min-width:26px; height:24px; padding:0 8px; border-radius:999px; border:2px solid var(--bg);
     background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
     font-weight:800; font-size:12px; font-variant-numeric:tabular-nums}
@@ -865,47 +865,39 @@ function renderBoard(){
     .map(([id,p])=>({id, ...p}))
     .sort((a,b)=> b.score - a.score || (a.updated-b.updated));
 
-  // number-line leaderboard: rank levels marked as ticks; each player placed
-  // left→right by score, shown as their score with initials underneath.
-  const track = $('#lbTrack'); track.innerHTML='';
+  const track = $('#lbTrack'); track.innerHTML=''; track.style.height='';
   const base = document.createElement('div'); base.className='base'; track.appendChild(base);
-  const max = G.maxScore || 0;
-  const pctOf = (sc)=> max ? Math.min(1, (sc||0)/max) : 0;
 
-  // single milestone: Genius at 70% of the available points, in yellow
-  const genius = RANKS.find(r => r[1] === 'Genius');
-  if(genius){
-    const gt = document.createElement('span'); gt.className='gtick';
-    gt.style.left = (genius[0]*100)+'%'; gt.title = 'Genius'; track.appendChild(gt);
-    const gl = document.createElement('span'); gl.className='glabel';
-    gl.style.left = (genius[0]*100)+'%'; gl.textContent = 'Genius'; track.appendChild(gl);
-  }
-
-  // Merge tied players into one bubble (both initials on the same number).
+  // Merge tied players into one bubble (both initials).
   const byScore = new Map();
   entries.forEach(p=>{ const k=p.score||0; if(!byScore.has(k)) byScore.set(k,[]); byScore.get(k).push(p); });
-  const groups = [...byScore.entries()].map(([score,ps])=>({score, ps, pct:pctOf(score)}))
-                  .sort((a,b)=> a.pct - b.pct);
+  const groups = [...byScore.entries()].map(([score,ps])=>({score, ps})).sort((a,b)=> a.score - b.score);
 
-  // Each player = a score bubble with their initial directly underneath, placed
-  // left→right by score. Tied players share one bubble (both initials). Close
-  // players drop to a lower lane so nothing overlaps — no connector lines, and
-  // it's obvious who leads (furthest right).
-  const sorted = groups.slice().sort((a,b)=> a.pct - b.pct);
-  const laneLast = []; const MIN_GAP = 0.14;
-  sorted.forEach(g=>{
-    let lane = 0;
-    while(lane < laneLast.length && g.pct - laneLast[lane] < MIN_GAP) lane++;
-    laneLast[lane] = g.pct; g.lane = lane;
-  });
-  track.style.height = (28 + Math.max(1, laneLast.length)*36) + 'px';
-  sorted.forEach(g=>{
+  // Bubbles stay on ONE line (vertically aligned) and move only horizontally.
+  // ZOOM the axis to the players' actual score range so they spread out and
+  // don't overlap. If everyone is still clustered (tiny range), the lower score
+  // simply sits behind the leader (z-index). Genius stays only if it still fits.
+  const scores = groups.map(g=>g.score);
+  const lo = Math.min(...scores), hi = Math.max(...scores);
+  const M = 0.12;                                   // horizontal margin so edge bubbles aren't clipped
+  const xOf = (s)=> (hi>lo) ? M + (1-2*M)*((s-lo)/(hi-lo)) : 0.5;
+
+  // Genius at 70% of the puzzle's max — keep it only if it lands on the zoomed
+  // axis and doesn't collide with a bubble.
+  const gScore = 0.7 * (G.maxScore||0), gx = xOf(gScore);
+  const geniusFits = (G.maxScore>0) && hi>lo && gx>0.03 && gx<0.97 &&
+                     !groups.some(g => Math.abs(xOf(g.score)-gx) < 0.09);
+  if(geniusFits){
+    const gt=document.createElement('span'); gt.className='gtick'; gt.style.left=(gx*100)+'%'; gt.title='Genius'; track.appendChild(gt);
+    const gl=document.createElement('span'); gl.className='glabel'; gl.style.left=(gx*100)+'%'; gl.textContent='Genius'; track.appendChild(gl);
+  }
+
+  groups.forEach(g=>{
     const mine = g.ps.some(p => p.id === PLAYER_ID);
     const pin = document.createElement('div');
     pin.className = 'pin' + (mine?' me':'');
-    pin.style.left = (g.pct*100)+'%';
-    pin.style.top  = (24 + g.lane*36)+'px';
-    pin.style.zIndex = String(2 + Math.round(g.pct*1000));
+    pin.style.left = (xOf(g.score)*100)+'%';
+    pin.style.zIndex = String(10 + Math.round(g.score));   // higher score in front
     const inits = g.ps.map(p => p.id===PLAYER_ID ? 'you' : initials(p.name)).join(' ');
     pin.innerHTML = `<span class="pnum">${g.score}</span><span class="pini">${escapeHtml(inits)}</span>`;
     pin.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`).join('\n');
