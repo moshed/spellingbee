@@ -472,11 +472,15 @@ async function fetchFullDict(){
   return _dictPromise;
 }
 
-// Build the set of all valid words for a given puzzle. Bump the cache version
-// to invalidate boards cached from the old (junkier) dictionary.
-const DICT_CACHE_VER = 'v4';
+// Build the set of all valid words for a given puzzle. The cache key embeds the
+// live dictionary's SIZE, so any change to words.json auto-invalidates every
+// board's cached word set — no manual version bump, no "still rejected after
+// refresh" staleness. DICT_CACHE_VER only changes if the algorithm itself does.
+const DICT_CACHE_VER = 'v5';
 async function computeValidWords(letters, center){
-  const key = 'hc_dict_' + DICT_CACHE_VER + '_' + [...letters].sort().join('') + '_' + center;
+  const dict = await fetchFullDict();
+  const ver = DICT_CACHE_VER + '.' + (dict ? dict.size : 'fb');
+  const key = 'hc_dict_' + ver + '_' + [...letters].sort().join('') + '_' + center;
   const cached = localStorage.getItem(key);
   if(cached){ try{ return new Set(JSON.parse(cached)); }catch(e){} }
 
@@ -487,19 +491,31 @@ async function computeValidWords(letters, center){
     return true;
   };
 
-  const dict = await fetchFullDict();
   let words;
   if(dict){
     words = [];
-    for(const w of dict){ if(/^[a-z]+$/.test(w) && passes(w)) words.push(w); }
+    for(const w of dict){ if(passes(w)) words.push(w); }
   }else{
     words = FALLBACK_WORDS.filter(w => passes(w));
   }
   words.sort();
   // NEVER cache the fallback result — otherwise one failed fetch poisons this
-  // board forever. Only persist a set built from the real dictionary.
-  if(dict){ try{ localStorage.setItem(key, JSON.stringify(words)); }catch(e){} }
+  // board. Only persist a set built from the real dictionary, and clear caches
+  // from older dictionary versions so storage doesn't grow unbounded.
+  if(dict){
+    pruneOldDictCache(ver);
+    try{ localStorage.setItem(key, JSON.stringify(words)); }catch(e){}
+  }
   return new Set(words);
+}
+function pruneOldDictCache(ver){
+  const prefix = 'hc_dict_' + ver + '_';
+  try{
+    for(let i=localStorage.length-1; i>=0; i--){
+      const k = localStorage.key(i);
+      if(k && k.startsWith('hc_dict_') && !k.startsWith(prefix)) localStorage.removeItem(k);
+    }
+  }catch(e){}
 }
 
 /* ============================================================
