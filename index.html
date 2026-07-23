@@ -130,7 +130,7 @@
   .hex:hover{filter:brightness(.94)}
   /* press feedback is a filter on the clipped element, so it follows the
      hexagon shape exactly — no square highlight box */
-  .hex:active{transform:translate(-50%,-50%) scale(.92); filter:brightness(.82)}
+  .hex:active, .hex.press{transform:translate(-50%,-50%) scale(.92); filter:brightness(.82)}
   .hex.center{background:var(--accent); color:var(--accent-ink)}
 
   /* ---- controls ---- */
@@ -738,7 +738,17 @@ function layoutFlower(){
     d.style.height = HEXH + 'px';
     d.style.left = `calc(50% + ${positions[i][0]}px)`;
     d.style.top  = `calc(50% + ${positions[i][1]}px)`;
-    d.addEventListener('click', ()=>{ addChar(ch); });
+    // pointerdown (not click) so fast taps — and repeated taps on the same
+    // letter, e.g. the double M/T in "committal" — each register immediately
+    // instead of being dropped or merged into a double-tap. preventDefault
+    // stops selection/zoom; we flash the press state manually since that
+    // suppresses :active.
+    d.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      addChar(ch);
+      d.classList.add('press');
+      setTimeout(()=> d.classList.remove('press'), 110);
+    });
     flower.appendChild(d);
   });
 }
