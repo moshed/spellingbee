@@ -343,45 +343,75 @@ function rankFor(score, max){
 }
 
 /* ============================================================
-   Network layer — shared scoreboard
-   Default adapter uses a free, no-auth JSON store (jsonblob).
-   If anything fails (offline, CORS, blocked), we fall back to
-   "link-share" mode: puzzle still shared via URL, and players
-   can pass score links to each other. The game is always
-   fully playable either way.
+   Supabase configuration  ← FILL THESE IN
+   Both values are safe to expose in the browser: the anon key
+   is public by design and access is controlled by your Row
+   Level Security policies. See the SQL at the bottom of this
+   file for the table + realtime setup.
+   Leave blank to run without a backend (offline link-share).
    ============================================================ */
-const JSONBLOB = 'https://jsonblob.com/api/jsonBlob';
+const SUPABASE_URL      = "";               // e.g. "https://abcdefgh.supabase.co"
+const SUPABASE_ANON_KEY = "";               // your project's public anon/publishable key
+const SUPABASE_TABLE    = "miscellaneous";  // table that stores scoreboard rows
+
+/* ============================================================
+   Network layer — realtime shared scoreboard (Supabase)
+   Each player owns one row per room, keyed by (room, player_id).
+   We load the current standings once, then subscribe to realtime
+   postgres changes so every score update pushes to all players
+   instantly. If Supabase isn't configured or can't be reached,
+   we fall back to link-share mode and the game still works.
+   ============================================================ */
 const Net = {
-  live: false,        // did we successfully attach to a shared room?
-  roomId: null,       // jsonblob id when live
-  async createRoom(state){
-    const res = await fetch(JSONBLOB, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
-      body: JSON.stringify(state)
-    });
-    if(!res.ok) throw new Error('create '+res.status);
-    let id = null;
-    const loc = res.headers.get('Location') || res.headers.get('location');
-    if(loc) id = loc.split('/').pop();
-    if(!id) throw new Error('no location');
-    return id;
+  live: false,     // connected to a realtime room?
+  room: null,      // room id (shared in the invite link)
+  sb: null,        // supabase client (lazy)
+  channel: null,
+  configured(){ return !!(SUPABASE_URL && SUPABASE_ANON_KEY); },
+  async client(){
+    if(this.sb) return this.sb;
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    this.sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { realtime:{ params:{ eventsPerSecond:5 } } });
+    return this.sb;
   },
-  async read(id){
-    const res = await fetch(JSONBLOB+'/'+id, {headers:{'Accept':'application/json'}, cache:'no-store'});
-    if(!res.ok) throw new Error('read '+res.status);
-    return res.json();
+  async join(room){
+    const sb = await this.client();
+    this.room = room;
+    // 1) load whoever is already in this room
+    const { data, error } = await sb.from(SUPABASE_TABLE).select('*').eq('room', room);
+    if(error) throw error;
+    (data||[]).forEach(r => { if(r.player_id !== PLAYER_ID) G.players[r.player_id] = rowToPlayer(r); });
+    // 2) subscribe to live inserts/updates/deletes for this room
+    this.channel = sb.channel('hive:'+room)
+      .on('postgres_changes',
+          { event:'*', schema:'public', table:SUPABASE_TABLE, filter:'room=eq.'+room },
+          (payload)=>{
+            const r = payload.new && payload.new.player_id ? payload.new : payload.old;
+            if(!r || r.player_id === PLAYER_ID) return;
+            if(payload.eventType === 'DELETE') delete G.players[r.player_id];
+            else G.players[r.player_id] = rowToPlayer(r);
+            renderBoard();
+          })
+      .subscribe();
+    this.live = true;
   },
-  async write(id, state){
-    const res = await fetch(JSONBLOB+'/'+id, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
-      body: JSON.stringify(state)
-    });
-    if(!res.ok) throw new Error('write '+res.status);
-    return res.json();
+  async upsert(){
+    if(!this.live) return;
+    const sb = await this.client();
+    const row = { room:this.room, player_id:PLAYER_ID, name:(G.name||'Player'),
+                  score:G.score, words:G.found.length, updated_at:new Date().toISOString() };
+    const { error } = await sb.from(SUPABASE_TABLE).upsert(row, { onConflict:'room,player_id' });
+    if(error) throw error;
+  },
+  async leave(){
+    try{ if(this.channel && this.sb) await this.sb.removeChannel(this.channel); }catch(e){}
+    this.channel = null; this.live = false;
   }
 };
+function rowToPlayer(r){
+  return { name:r.name, score:r.score||0, words:r.words||0, updated: r.updated_at ? Date.parse(r.updated_at) : now() };
+}
+function randomRoom(){ return 'r' + Math.random().toString(36).slice(2,9) + Math.random().toString(36).slice(2,6); }
 
 /* ============================================================
    Game state
@@ -408,7 +438,7 @@ function puzzleSignature(letters, center){
 /* ---------- persistence of my own progress ---------- */
 function saveProgress(){
   const data = {name:G.name, found:G.found, score:G.score, startedAt:G.startedAt,
-                letters:G.letters, center:G.center, roomId:Net.roomId};
+                letters:G.letters, center:G.center, room:Net.room};
   try{ localStorage.setItem('hc_game_'+G.roomKey, JSON.stringify(data)); }catch(e){}
 }
 function loadProgress(roomKey){
@@ -494,9 +524,11 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 function renderNetNote(){
   const el = $('#netNote');
   if(Net.live){
-    el.innerHTML = '<span class="dotlive" style="display:inline-block;vertical-align:middle"></span> Live — scores sync automatically.';
+    el.innerHTML = '<span class="dotlive" style="display:inline-block;vertical-align:middle"></span> Live via Supabase — scores update in real time.';
+  }else if(Net.configured()){
+    el.innerHTML = '<span class="dotoff" style="display:inline-block;vertical-align:middle"></span> Couldn\'t reach Supabase — playing on the offline scoreboard.';
   }else{
-    el.innerHTML = '<span class="dotoff" style="display:inline-block;vertical-align:middle"></span> Offline scoreboard — use <b>Share</b> to send your score link.';
+    el.innerHTML = '<span class="dotoff" style="display:inline-block;vertical-align:middle"></span> Offline scoreboard — add your Supabase keys for live sync, or use <b>Share</b> to send score links.';
   }
 }
 
@@ -541,57 +573,27 @@ function submitWord(){
 function myEntry(){
   return {name:G.name||'Player', score:G.score, words:G.found.length, updated:now()};
 }
-let _pushTimer = null, _pushing = false, _pendingPush = false;
+// Coalesce rapid updates into at most one write in flight, with one queued.
+let _pushTimer = null, _pushing = false, _pending = false;
 function pushScore(){
   G.players[PLAYER_ID] = {...(G.players[PLAYER_ID]||{}), ...myEntry()};
   renderBoard();
-  if(!Net.live) return;                 // offline: nothing to send
-  // throttle network writes
-  if(_pushTimer) return;
+  if(!Net.live) return;               // offline: local board only
+  if(_pushTimer){ _pending = true; return; }
   _pushTimer = setTimeout(async ()=>{
     _pushTimer = null;
     await doPush();
-  }, 1200);
+    if(_pending){ _pending = false; pushScore(); }
+  }, 600);
 }
 async function doPush(){
-  if(!Net.live) return;
-  if(_pushing){ _pendingPush = true; return; }
+  if(!Net.live){ return; }
+  if(_pushing){ _pending = true; return; }
   _pushing = true;
-  try{
-    // read-merge-write so we don't clobber other players
-    let remote = null;
-    try{ remote = await Net.read(Net.roomId); }catch(e){}
-    const players = (remote && remote.players) ? remote.players : {};
-    players[PLAYER_ID] = myEntry();
-    // keep our knowledge of others fresh too
-    for(const [id,p] of Object.entries(players)){ if(id!==PLAYER_ID) G.players[id]=p; }
-    const state = {puzzle:{letters:G.letters, center:G.center}, players};
-    await Net.write(Net.roomId, state);
-    renderBoard();
-  }catch(e){
-    // a transient failure shouldn't break the game
-  }finally{
-    _pushing = false;
-    if(_pendingPush){ _pendingPush=false; doPush(); }
-  }
+  try{ await Net.upsert(); }
+  catch(e){ /* transient failure shouldn't break play */ }
+  finally{ _pushing = false; }
 }
-let _pollTimer = null;
-function startPolling(){
-  stopPolling();
-  if(!Net.live) return;
-  _pollTimer = setInterval(async ()=>{
-    try{
-      const remote = await Net.read(Net.roomId);
-      if(remote && remote.players){
-        for(const [id,p] of Object.entries(remote.players)){
-          if(id!==PLAYER_ID) G.players[id]=p;
-        }
-        renderBoard();
-      }
-    }catch(e){}
-  }, 4000);
-}
-function stopPolling(){ if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; } }
 
 /* ============================================================
    Sharing
@@ -601,23 +603,24 @@ function buildShareUrl(opts={}){
   const p = new URLSearchParams();
   p.set('l', G.letters.join(''));
   p.set('c', G.center);
-  if(Net.live && Net.roomId) p.set('r', Net.roomId);
+  if(Net.room) p.set('r', Net.room);
   if(opts.withScore){
     p.set('s', b64urlEncode({i:PLAYER_ID, ...myEntry()}));
   }
   return base + '#' + p.toString();
 }
 async function onShare(){
-  // If we're not live yet, try to create a shared room now (best effort).
-  if(!Net.live){
-    try{
-      const state = {puzzle:{letters:G.letters, center:G.center}, players:{[PLAYER_ID]:myEntry()}};
-      const id = await Net.createRoom(state);
-      Net.roomId = id; Net.live = true;
-      renderNetNote(); startPolling();
-      history.replaceState(null,'', buildShareUrl());
-    }catch(e){ /* stay in offline/link-share mode */ }
+  // Make sure there's a room to invite people to.
+  if(!Net.room){
+    Net.room = randomRoom();
+    if(Net.configured()){
+      try{ await Net.join(Net.room); await Net.upsert(); }
+      catch(e){ Net.live = false; }   // keep the room id for offline link-share
+    }
+    renderNetNote();
+    history.replaceState(null,'', buildShareUrl());
   }
+  // When live, others get our score via realtime, so no need to bake it into the link.
   const url = buildShareUrl({withScore: !Net.live});
   const shareData = {title:'Honeycomb — Spelling Hive', text:'Beat my score in this word puzzle!', url};
   try{
@@ -657,7 +660,7 @@ async function startGame(letters, center, roomId){
     G.found = prev.found||[]; G.score = prev.score||0;
     G.startedAt = prev.startedAt || now();
     if(!G.name && prev.name) G.name = prev.name;
-    if(prev.roomId && !roomId) roomId = prev.roomId;
+    if(prev.room && !roomId) roomId = prev.room;
   }else{
     G.found = []; G.score = 0; G.startedAt = now();
   }
@@ -671,18 +674,18 @@ async function startGame(letters, center, roomId){
   $('#flash').innerHTML='';
   layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard();
 
-  // attach to shared room if one was supplied
-  Net.live = false; Net.roomId = null;
-  if(roomId){
-    try{
-      const remote = await Net.read(roomId);
-      Net.roomId = roomId; Net.live = true;
-      if(remote && remote.players){
-        for(const [id,p] of Object.entries(remote.players)){ if(id!==PLAYER_ID) G.players[id]=p; }
-      }
-      await doPush();          // announce ourselves
-      startPolling();
-    }catch(e){ Net.live=false; Net.roomId=null; }
+  // attach to a realtime room. If we arrived via an invite link we use its
+  // room id; otherwise, when Supabase is configured, we open a fresh room so
+  // this player is live from the first word.
+  await Net.leave();
+  Net.live = false; Net.room = null;
+  const wantRoom = roomId || (Net.configured() ? randomRoom() : null);
+  if(wantRoom){
+    Net.room = wantRoom;                 // keep the id even if the connection fails
+    if(Net.configured()){
+      try{ await Net.join(wantRoom); await Net.upsert(); }  // load others + announce ourselves
+      catch(e){ Net.live = false; }
+    }
   }
   renderNetNote();
   history.replaceState(null,'', buildShareUrl());
@@ -770,8 +773,8 @@ $('#btnShare').addEventListener('click', onShare);
 $('#btnRandom').addEventListener('click', randomPuzzle);
 $('#btnStartCustom').addEventListener('click', startCustom);
 $('#btnHelp').addEventListener('click', ()=> $('#help').showModal());
-$('#btnNew').addEventListener('click', ()=>{
-  stopPolling();
+$('#btnNew').addEventListener('click', async ()=>{
+  await Net.leave();
   location.href = location.origin + location.pathname;   // back to a clean setup
 });
 $('#nameInput').addEventListener('input', ()=>{
@@ -785,6 +788,8 @@ setInterval(()=>{
   if($('#game').classList.contains('hidden') || !G.startedAt) return;
   $('#timer').textContent = fmtClock(now()-G.startedAt);
 }, 500);
+/* keep the "updated Xs ago" labels fresh on the scoreboard */
+setInterval(()=>{ if(!$('#game').classList.contains('hidden')) renderBoard(); }, 5000);
 
 /* ---------- initial load ---------- */
 (function init(){
@@ -817,5 +822,44 @@ setInterval(()=>{
   }
 })();
 </script>
+
+<!--
+============================================================
+ SUPABASE SETUP (one time)
+============================================================
+1) In your Supabase project, open the SQL Editor and run:
+
+   create table if not exists public.miscellaneous (
+     room       text        not null,
+     player_id  text        not null,
+     name       text,
+     score      integer     not null default 0,
+     words      integer     not null default 0,
+     updated_at timestamptz not null default now(),
+     primary key (room, player_id)
+   );
+
+   -- Row Level Security: allow this public game to read/write freely.
+   alter table public.miscellaneous enable row level security;
+
+   create policy "hive read"   on public.miscellaneous for select using (true);
+   create policy "hive insert" on public.miscellaneous for insert with check (true);
+   create policy "hive update" on public.miscellaneous for update using (true) with check (true);
+
+   -- Turn on realtime so scores stream to every player:
+   alter publication supabase_realtime add table public.miscellaneous;
+
+2) In this file, fill in SUPABASE_URL and SUPABASE_ANON_KEY near the
+   top of the <script> (Project Settings -> API in Supabase).
+
+Notes:
+ - The anon key is meant to be public; RLS above governs access.
+ - Prefer not to reuse a table you already rely on: this game writes
+   rows keyed by (room, player_id). If your existing "miscellaneous"
+   table has other columns/uses, point SUPABASE_TABLE at a new name.
+ - To wipe old games periodically, delete rows older than N days, e.g.:
+     delete from public.miscellaneous where updated_at < now() - interval '30 days';
+============================================================
+-->
 </body>
 </html>
