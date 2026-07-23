@@ -1002,6 +1002,9 @@ async function startGame(letters, center, roomId){
   if(G.name) localStorage.setItem('hc_name', G.name);
   G.players[PLAYER_ID] = myEntry();
 
+  // remember this as the active game so a refresh (even one that lost the URL
+  // hash) drops us straight back in
+  localStorage.setItem('hc_lastActive', G.roomKey);
   // swap screens
   document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
@@ -1156,7 +1159,8 @@ $('#btnHelp').addEventListener('click', ()=>{ closeMenu(); $('#help').showModal(
 $('#btnNew').addEventListener('click', async ()=>{
   closeMenu();
   await Net.leave();
-  location.href = location.origin + location.pathname;   // back to a clean setup
+  localStorage.removeItem('hc_lastActive');               // don't auto-resume — user wants a new board
+  location.href = location.origin + location.pathname;    // back to a clean setup
 });
 $('#nameInput').addEventListener('input', ()=>{
   G.name = $('#nameInput').value.trim();
@@ -1321,13 +1325,12 @@ let joinRoute = null;   // pending invite route while the join dialog is open
       for(const [id,p] of Object.entries(store)){ if(id!==PLAYER_ID) G.players[id]=p; }
     }catch(e){}
 
-    // A handoff link (&me) is us resuming on another device — no name prompt.
-    // Also skip the prompt if THIS browser has already played this exact room
-    // (re-opening our own invite link) so we resume as ourselves, not a new
-    // player. A first-time invite link prompts for a name.
+    // A refresh should drop us straight back into the game. So if this browser
+    // has ANY saved progress for this board (we've opened it before), resume
+    // silently — no dialog. A handoff link (&me) also resumes directly. The
+    // join dialog is ONLY for a brand-new invite link we've never opened.
     const prevHere = loadProgress(sig);
-    const rejoiningOwnRoom = prevHere && prevHere.name && route.room && prevHere.room === route.room;
-    if(route.me || rejoiningOwnRoom){
+    if(route.me || prevHere){
       startGame(route.letters, route.center, route.room);
     }else{
       joinRoute = route;
@@ -1338,6 +1341,14 @@ let joinRoute = null;   // pending invite route while the join dialog is open
         joinRoute = null;
         startGame(route.letters, route.center, route.room);
       }
+    }
+  }else{
+    // No board in the URL — if the hash was lost but we have an active game,
+    // resume it automatically (refresh should never strand you on the menu).
+    const lastKey = localStorage.getItem('hc_lastActive');
+    const last = lastKey && loadProgress(lastKey);
+    if(last && last.letters && last.center){
+      startGame(last.letters, last.center, last.room);
     }
   }
 })();
