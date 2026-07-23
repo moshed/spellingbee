@@ -56,19 +56,24 @@
   .dots .mk.cur{min-width:26px; height:26px; border-radius:999px; padding:0 6px; background:var(--accent);
     color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px}
 
-  /* ---- live scoreboard strip (top row, ranked, points) ---- */
-  body.playing .logo .word{display:none}
-  .scorestrip{flex:1 1 auto; min-width:0; display:flex; gap:8px; align-items:center;
-    overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none}
-  .scorestrip::-webkit-scrollbar{display:none}
-  .spill{flex:0 0 auto; display:inline-flex; align-items:center; gap:8px; padding:6px 12px;
-    border-radius:999px; background:var(--panel2); font-size:13px; cursor:pointer;
-    -webkit-tap-highlight-color:transparent}
-  .spill.me{background:var(--accent); color:var(--accent-ink)}
-  .spill .nm{font-weight:700; max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .spill.me .nm{font-weight:600; opacity:.85; text-transform:none}
-  .spill .pt{font-weight:800; font-variant-numeric:tabular-nums}
-  .scorestrip .empty{color:var(--muted); font-size:13px; white-space:nowrap}
+  /* ---- leaderboard number line ---- */
+  .leaderboard{padding:2px 26px 2px; cursor:pointer; -webkit-tap-highlight-color:transparent}
+  .lbtrack{position:relative; height:50px}
+  .lbtrack .base{position:absolute; left:0; right:0; top:38px; height:3px; background:var(--line); border-radius:3px}
+  .lbtrack .tick{position:absolute; top:34px; width:2px; height:11px; background:var(--line); transform:translateX(-50%); border-radius:2px}
+  .lbtrack .tick.reached{background:var(--muted)}
+  .lbtrack .tick.cur{background:var(--accent); height:15px; top:32px}
+  .lbtrack .tick.last{height:15px; top:32px}
+  .pin{position:absolute; top:0; transform:translateX(-50%); display:flex; flex-direction:column;
+    align-items:center; gap:2px; transition:left .35s ease}
+  .pin .pnum{min-width:24px; height:24px; padding:0 6px; border-radius:999px; border:2px solid var(--bg);
+    background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:12px; font-variant-numeric:tabular-nums}
+  .pin.me{z-index:2}
+  .pin.me .pnum{background:var(--accent); color:var(--accent-ink)}
+  .pin .pini{font-size:10px; font-weight:700; color:var(--muted); max-width:46px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1}
+  .pin.me .pini{color:var(--ink)}
 
   /* ---- overflow menu (New / How to play) ---- */
   .menuwrap{position:relative; flex:0 0 auto}
@@ -163,7 +168,7 @@
 <div class="wrap">
   <header class="top">
     <div class="logo"><span class="dot"></span> <span class="word">Spelling Bee</span></div>
-    <div class="scorestrip" id="scoreStrip" title="Tap for full standings"></div>
+    <div class="spacer"></div>
     <div class="menuwrap">
       <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu hidden" id="menu">
@@ -199,6 +204,11 @@
 
   <!-- ================= GAME ================= -->
   <section id="game" class="game hidden">
+    <!-- leaderboard number-line: players placed by score, rank levels ticked -->
+    <div class="leaderboard" id="leaderboard" title="Tap for full standings">
+      <div class="lbtrack" id="lbTrack"></div>
+    </div>
+
     <div class="words" id="wordsBox">
       <button class="words-head" id="wordsToggle" aria-expanded="false">
         <span id="wordsLabel">Your words …</span>
@@ -675,19 +685,30 @@ function renderBoard(){
     .map(([id,p])=>({id, ...p}))
     .sort((a,b)=> b.score - a.score || (a.updated-b.updated));
 
-  // live scoreboard strip on the top line: your score ("5 you") plus each
-  // other player as their initial + score ("M 3"), ranked leader-first.
-  const strip = $('#scoreStrip'); strip.innerHTML='';
+  // number-line leaderboard: rank levels marked as ticks; each player placed
+  // left→right by score, shown as their score with initials underneath.
+  const track = $('#lbTrack'); track.innerHTML='';
+  const base = document.createElement('div'); base.className='base'; track.appendChild(base);
+  const max = G.maxScore || 0;
+  const pctOf = (sc)=> max ? Math.min(1, (sc||0)/max) : 0;
+  const myPct = pctOf(G.score);
+  let curIdx = 0; RANKS.forEach(([t],i)=>{ if(myPct>=t) curIdx=i; });
+  RANKS.forEach(([t,name],i)=>{
+    const tick=document.createElement('span');
+    tick.className='tick'+(myPct>=t?' reached':'')+(i===curIdx?' cur':'')+(i===RANKS.length-1?' last':'');
+    tick.style.left=(t*100)+'%';
+    tick.title=name;
+    track.appendChild(tick);
+  });
   entries.forEach(p=>{
     const mine = p.id === PLAYER_ID;
-    const chip = document.createElement('div');
-    chip.className = 'spill' + (mine?' me':'');
-    chip.innerHTML = mine
-      ? `<span class="pt">${p.score||0}</span><span class="nm">you</span>`
-      : `<span class="nm">${escapeHtml(initials(p.name))}</span><span class="pt">${p.score||0}</span>`;
-    chip.title = `${p.name||'Player'} — ${p.score||0} pts · ${p.words||0} words`;
-    chip.addEventListener('click', openBoard);
-    strip.appendChild(chip);
+    const pin=document.createElement('div');
+    pin.className='pin'+(mine?' me':'');
+    pin.style.left=(pctOf(p.score)*100)+'%';
+    pin.innerHTML = `<span class="pnum">${p.score||0}</span>`+
+                    `<span class="pini">${escapeHtml(mine?'you':initials(p.name))}</span>`;
+    pin.title = `${p.name||'Player'} — ${p.score||0} pts · ${p.words||0} words`;
+    track.appendChild(pin);
   });
 
   // full standings (inside the sheet)
@@ -1052,6 +1073,7 @@ $('#renameSave').addEventListener('click', ()=>{
 /* score-strip chip -> full standings sheet */
 function openBoard(){ renderBoard(); renderNetNote(); $('#boardSheet').classList.remove('hidden'); }
 function closeBoard(){ $('#boardSheet').classList.add('hidden'); }
+$('#leaderboard').addEventListener('click', openBoard);
 $('#boardClose').addEventListener('click', closeBoard);
 $('#boardSheet').addEventListener('click', (e)=>{ if(e.target === $('#boardSheet')) closeBoard(); });
 
