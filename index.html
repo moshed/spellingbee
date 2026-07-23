@@ -195,11 +195,15 @@
     </div>
   </header>
 
-  <!-- ============== RESUME (your saved boards) ============== -->
-  <section id="resume" class="card hidden" style="margin-bottom:14px">
-    <h2 style="margin:.2em 0">Resume a game</h2>
-    <p class="muted" style="margin-top:0">Boards you've played on this device — pick up where you left off.</p>
-    <div id="resumeList"></div>
+  <!-- ============== RESUME (your saved boards) — collapsed ============== -->
+  <section id="resume" class="words hidden" style="margin-bottom:14px">
+    <button class="words-head" id="resumeToggle" aria-expanded="false">
+      <span id="resumeLabel">Resume a game</span>
+      <span class="chev">⌄</span>
+    </button>
+    <div class="words-body hidden" id="resumeBody">
+      <div id="resumeList"></div>
+    </div>
   </section>
 
   <!-- ================= SETUP ================= -->
@@ -863,11 +867,13 @@ function renderBoard(){
     const svg = document.createElementNS(NS,'svg');
     svg.setAttribute('class','lblines'); svg.setAttribute('viewBox','0 0 100 56'); svg.setAttribute('preserveAspectRatio','none');
     moved.forEach(g=>{
-      const ln = document.createElementNS(NS,'line');
-      ln.setAttribute('x1',(g.pct*100).toFixed(2));    ln.setAttribute('y1','31');   // bubble
-      ln.setAttribute('x2',(g.labelX*100).toFixed(2)); ln.setAttribute('y2','40');   // label
-      ln.setAttribute('stroke','var(--muted)'); ln.setAttribute('stroke-width','1'); ln.setAttribute('vector-effect','non-scaling-stroke');
-      svg.appendChild(ln);
+      const x1 = (g.pct*100).toFixed(2), x2 = (g.labelX*100).toFixed(2);
+      // elbow: straight down from the bubble, across, then straight down to the label
+      const pl = document.createElementNS(NS,'polyline');
+      pl.setAttribute('points', `${x1},30 ${x1},35 ${x2},35 ${x2},40`);
+      pl.setAttribute('fill','none');
+      pl.setAttribute('stroke','var(--muted)'); pl.setAttribute('stroke-width','1'); pl.setAttribute('vector-effect','non-scaling-stroke');
+      svg.appendChild(pl);
     });
     track.appendChild(svg);
   }
@@ -1226,6 +1232,12 @@ $('#wordsToggle').addEventListener('click', ()=>{
   $('#wordsBody').classList.toggle('hidden', !open);
   $('#wordsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
 });
+/* resume list collapse/expand (keeps the home screen compact) */
+$('#resumeToggle').addEventListener('click', ()=>{
+  const box = $('#resume'), open = box.classList.toggle('open');
+  $('#resumeBody').classList.toggle('hidden', !open);
+  $('#resumeToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+});
 /* sort the found-words list */
 $$('#wordSort button').forEach(b=>{
   b.classList.toggle('active', b.dataset.sort === G.foundSort);
@@ -1293,6 +1305,7 @@ function drawResume(boards){
   const sec = $('#resume'), list = $('#resumeList');
   if(!boards.length){ sec.classList.add('hidden'); return; }
   sec.classList.remove('hidden');
+  $('#resumeLabel').textContent = 'Resume a game (' + boards.length + ')';
   list.innerHTML = '';
   boards.slice(0,12).forEach(d=>{
     const letters = (d.letters||[]).map(l => l===d.center
