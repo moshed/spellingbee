@@ -6,7 +6,22 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
 
 ## Structure
 - `index.html` — the entire game. Setup screen → 7-hex flower → word entry,
-  scoring, ranks, found-words list, and a live scoreboard side panel.
+  scoring, ranks, found-words list, and a live scoreboard.
+
+## UI / layout
+- **Fit-to-screen** (no scroll on mobile): `.wrap` is a flex column,
+  `#game` fills height. Rows top→bottom: rank-dot progress bar, collapsible
+  "Your words …" dropdown, flash+entry line, hex flower (`flex:1`, centered),
+  pill controls (Delete / ↻ / Enter). `body.playing` hides the footer.
+- **Flat-top hexagons** (flat edge on top/bottom, points left/right) —
+  clip-path `polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)`.
+  Flower positions in `layoutFlower()`: top/bottom at ±HEXH, four diagonals at
+  (±0.75·HEXW, ±0.5·HEXH), spacing factor `S=1.04` for a hairline gap.
+- **Collapsed scoreboard**: player initials as overlapping avatars in the
+  top-right (`#crew`), leader first, "+N" overflow. Tap opens `#boardSheet`
+  (full standings + timer + Invite/Share).
+- **Join flow**: arriving via an invite link opens `#joinDlg` so the joiner
+  sets their own name before being announced to the room (no more "Player").
 - `CNAME` — `spellingbee.dancykier.com`.
 - Repo: `moshed/spellingbee` (public, renamed from `games`). Game was originally on branch
   `claude/hexagon-word-game-multiplayer-6d318g`; merged into `main`.
@@ -27,6 +42,10 @@ See config near the top of the `<script>` in `index.html`:
 - One row per `(room, player_id)`; realtime publication enabled so scores
   stream to every player. Open policies (read/insert/update `using(true)`)
   — it's a public party game, no auth.
+- **Live sync = realtime + polling.** `REPLICA IDENTITY FULL` is set for clean
+  postgres_changes payloads; on top of the realtime subscription, `Net.refresh()`
+  re-pulls the room every 3.5s as a safety net so phone/desktop stay in sync
+  even if a realtime event is dropped on a flaky network.
 - Falls back to offline link-share mode if Supabase is unreachable.
 
 ### Schema (already provisioned)
