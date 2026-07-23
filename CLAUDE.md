@@ -29,7 +29,23 @@ shareable real-time multiplayer scoreboard. Everything lives in `index.html`
   lazily opens the shared room on first share.
 - **Join flow**: a plain invite link opens `#joinDlg` so the joiner sets their
   own name before being announced (no "Player"). A **handoff** link (`&me`,`&n`)
-  skips the prompt and resumes as the same player.
+  skips the prompt and resumes as the same player. Re-opening your OWN invite
+  link in the same browser (local progress for that room exists) also skips the
+  prompt and resumes you — no duplicate player.
+- **Found-words sort**: `#wordSort` toggle A–Z / Recent (order gotten, newest
+  first), persisted in `hc_foundSort`. **Change name**: `#btnRename` → `#nameDlg`;
+  live-syncs to board + cloud via `pushScore()`.
+- **Touch UX**: `touch-action:manipulation` on body kills double-tap-zoom (pinch
+  still works); `-webkit-tap-highlight-color:transparent` on `.hex`/buttons +
+  a clipped `:active` brightness so the hex press state follows the hexagon
+  shape (no square grey box).
+
+## Where the words come from
+NOT the DB. The word bank is `an-array-of-english-words` (~275k) fetched from a
+CDN at runtime, filtered per board, cached in the browser (localStorage `v2` +
+HTTP cache). Misc DB only holds scoreboard rows. If a word like `fend`/`confound`
+is rejected, it's the stale fallback cache — fixed by the dictionary robustness
+changes above.
 - `CNAME` — `spellingbee.dancykier.com`.
 - Repo: `moshed/spellingbee` (public, renamed from `games`). Game was originally on branch
   `claude/hexagon-word-game-multiplayer-6d318g`; merged into `main`.
