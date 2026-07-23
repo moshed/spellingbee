@@ -12,7 +12,7 @@
     --hex:#e8ebf2; --hex-ink:#1a1d24;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
+  html,body{margin:0; height:100%; overflow:hidden; overscroll-behavior:none}
   body{
     background:radial-gradient(1200px 700px at 70% -10%, #1b2030 0%, var(--bg) 55%);
     color:var(--ink); font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -22,7 +22,9 @@
   }
   button, .hex{ -webkit-tap-highlight-color:transparent }   /* kill the square grey tap flash */
   a{color:var(--accent)}
-  .wrap{max-width:960px; margin:0 auto; padding:14px 14px 20px; min-height:100dvh; display:flex; flex-direction:column}
+  .wrap{max-width:960px; margin:0 auto; padding:14px 14px 20px; height:100dvh; overflow-y:auto; display:flex; flex-direction:column}
+  body.playing{touch-action:none}                 /* game screen: no page scroll/pan at all */
+  body.playing .wrap{overflow:hidden}
   header.top{display:flex; align-items:center; gap:12px; margin-bottom:8px}
   .logo{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.3px}
   .logo .dot{width:20px;height:22px;background:var(--accent);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
@@ -94,7 +96,7 @@
   .words-head .rw-more{color:var(--muted); font-size:12px; font-weight:700; flex:0 0 auto}
   .words-head .chev{transition:transform .18s ease}
   .words.open .words-head .chev{transform:rotate(180deg)}
-  .words-body{padding:2px 14px 14px; max-height:24vh; overflow:auto}
+  .words-body{padding:2px 14px 14px; max-height:24vh; overflow-y:auto; touch-action:pan-y}
   .wordsort{display:flex; gap:6px; margin-bottom:10px}
   .wordsort button{padding:5px 12px; border-radius:999px; background:transparent; border:1px solid var(--line);
     font-size:12px; font-weight:700; color:var(--muted)}
@@ -138,7 +140,7 @@
   .sheet{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:60; display:flex;
     align-items:flex-start; justify-content:flex-end; padding:14px}
   .sheet-card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px;
-    width:min(340px,92vw); margin-top:52px; max-height:80vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.5)}
+    width:min(340px,92vw); margin-top:52px; max-height:80vh; overflow-y:auto; touch-action:pan-y; box-shadow:0 20px 60px rgba(0,0,0,.5)}
   .sheet-head{display:flex; align-items:center; gap:10px; margin-bottom:8px}
   .sheet-head strong{flex:1}
   .sheet-head .x{background:transparent; border:0; color:var(--muted); font-size:18px; padding:2px 6px}
@@ -395,11 +397,21 @@ const PLAYER_ID = getPlayerId();
 
 /* ============================================================
    Dictionary
-   Fetched once from a CDN and cached in memory. Per-puzzle the
-   list of valid words is cached in localStorage so the game
-   works offline after the first load of a board.
+   NYT Spelling Bee's own word list is proprietary (there's no
+   official download), and because we generate RANDOM puzzles we
+   couldn't validate them from an archive of past NYT answers
+   anyway. So we use the closest curated approximation: the SCOWL
+   "American English" word tiers (via the wordlist-english package).
+   Versus a Scrabble-style list this drops British spellings
+   (offence, colour), abbreviations (conf, dict) and most obscure
+   junk (unconfounded, dari, riad…) while KEEPING real uncommon
+   words (diacritic, acridity, cycad, dyadic, radii). Not identical
+   to NYT, but much closer. Cached in memory + per-board.
    ============================================================ */
-const DICT_SOURCES = [
+const SCOWL_BASE  = 'https://cdn.jsdelivr.net/npm/wordlist-english@1.2.1/';
+const SCOWL_SIZES = [10,20,35,40,50,55,60,70];        // frequency tiers (bigger = rarer words)
+const SCOWL_DIALECTS = ['english','american'];        // american only — no british spellings
+const DICT_SOURCES = [                                // fallback if SCOWL is unreachable
   'https://cdn.jsdelivr.net/npm/an-array-of-english-words/index.json',
   'https://unpkg.com/an-array-of-english-words/index.json'
 ];
@@ -425,6 +437,26 @@ async function fetchFullDict(){
   if(_fullDict) return _fullDict;
   if(_dictPromise) return _dictPromise;         // coalesce concurrent callers
   _dictPromise = (async ()=>{
+    // 1) preferred: our own curated, same-origin word list (SCOWL American +
+    //    common gap-fillers, British spellings & abbreviations removed).
+    try{
+      const res = await fetch('words.json', {cache:'force-cache'});
+      if(res.ok){
+        const arr = await res.json();
+        if(Array.isArray(arr) && arr.length > 20000){ _fullDict = new Set(arr); return _fullDict; }
+      }
+    }catch(e){ /* fall through */ }
+    // 2) fallback: SCOWL American English tiers straight from the CDN
+    try{
+      const urls = [];
+      for(const d of SCOWL_DIALECTS) for(const s of SCOWL_SIZES) urls.push(SCOWL_BASE + d + '-words-' + s + '.json');
+      const parts = await Promise.all(urls.map(u =>
+        fetch(u, {cache:'force-cache'}).then(r => r.ok ? r.json() : []).catch(()=>[])));
+      const set = new Set();
+      for(const arr of parts){ if(Array.isArray(arr)) for(const w of arr) set.add(String(w).toLowerCase()); }
+      if(set.size > 20000){ _fullDict = set; return _fullDict; }
+    }catch(e){ /* fall through */ }
+    // 3) last resort: the broad Scrabble-style list
     for(const url of DICT_SOURCES){
       try{
         const res = await fetch(url, {cache:'force-cache'});
@@ -440,8 +472,8 @@ async function fetchFullDict(){
 }
 
 // Build the set of all valid words for a given puzzle. Bump the cache version
-// to invalidate any board that was cached from the tiny fallback list.
-const DICT_CACHE_VER = 'v2';
+// to invalidate boards cached from the old (junkier) dictionary.
+const DICT_CACHE_VER = 'v3';
 async function computeValidWords(letters, center){
   const key = 'hc_dict_' + DICT_CACHE_VER + '_' + [...letters].sort().join('') + '_' + center;
   const cached = localStorage.getItem(key);
