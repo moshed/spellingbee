@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>Spelling Bee — dancykier.com</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f1115'/%3E%3Cpath d='M16 3 30 10 30 22 16 29 2 22 2 10Z' fill='%23f7da21'/%3E%3C/svg%3E" />
 <meta name="description" content="A hexagonal word game. Make as many words as you can using the yellow center letter. Share a link to play against friends." />
 <style>
   :root{
@@ -321,7 +322,7 @@
     <li>Build words from the seven letters.</li>
     <li>Every word must contain the <b style="color:var(--accent)">center letter</b>.</li>
     <li>Words are at least <b>4 letters</b>; letters may repeat.</li>
-    <li><b>Scoring:</b> a 4-letter word = 1 point, then <b>+1 for each extra letter</b> (5 letters = 2, 6 = 3, …). A <b>pangram</b> (uses all 7 letters) earns an extra <b>+7</b>.</li>
+    <li><b>Scoring:</b> a 4-letter word = 1 point; longer words score <b>1 point per letter</b> (5 letters = 5, 6 = 6, …). A <b>pangram</b> (uses all 7 letters) earns an extra <b>+7</b>.</li>
     <li><b>Play together:</b> tap <b>Invite / Share</b> and send the link. Everyone plays the same board and the scoreboard shows each player's score and when they last updated — great for playing at the same time <i>or</i> whenever you each get a chance.</li>
   </ul>
   <form method="dialog" style="text-align:right"><button class="primary">Got it</button></form>
@@ -505,9 +506,9 @@ async function computeValidWords(letters, center){
    Scoring (Spelling-Bee style)
    ============================================================ */
 function wordScore(w, letters){
-  // 4-letter word = 1 point (minimum); every extra letter adds +1.
-  // A pangram (uses all 7 letters) earns an additional +7.
-  let base = w.length - 3;
+  // NYT scoring: a 4-letter word = 1 point; longer words score 1 point per
+  // letter. A pangram (uses all 7 letters) earns an extra +7.
+  let base = (w.length === 4) ? 1 : w.length;
   const isPan = new Set(w).size === 7 && letters.every(l => w.includes(l));
   if(isPan) base += 7;
   return {points: base, pangram: isPan};
@@ -1037,11 +1038,23 @@ async function startGame(letters, center, roomId){
   G.valid = await computeValidWords(G.letters, G.center);
   G.maxScore = maxScoreOf(G.valid, G.letters);
   $('#flash').innerHTML='';
+  pruneFound();               // drop any previously-found words the clean dict now rejects
   renderScore();
   saveProgress();
   // If the full dictionary wasn't available yet we're on the tiny fallback list;
   // keep retrying in the background and upgrade the word list once it loads.
   if(!_fullDict) ensureDictThenRecompute(G.roomKey);
+}
+
+// Re-validate our found words against the current (clean) dictionary and
+// recompute the score. Only runs with the REAL dictionary loaded, so a failed
+// fetch / fallback list never wrongly deletes good words.
+function pruneFound(){
+  if(!_fullDict) return;
+  const before = G.found.length;
+  G.found = G.found.filter(w => G.valid.has(w));
+  G.score = G.found.reduce((s,w)=> s + wordScore(w, G.letters).points, 0);
+  if(G.found.length !== before){ renderFound(); renderBoard(); pushScore(); }  // sync corrected score
 }
 
 async function ensureDictThenRecompute(forKey){
@@ -1050,6 +1063,7 @@ async function ensureDictThenRecompute(forKey){
   if(G.roomKey !== forKey) return;            // player moved to another puzzle
   G.valid = await computeValidWords(G.letters, G.center);
   G.maxScore = maxScoreOf(G.valid, G.letters);
+  pruneFound();
   renderScore();
 }
 
