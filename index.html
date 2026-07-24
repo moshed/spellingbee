@@ -208,6 +208,9 @@
   .setup .lettersgrid input{width:52px; height:52px; text-align:center; font-size:22px; text-transform:uppercase; font-weight:800}
   .setup .lettersgrid input.center{border-color:var(--accent); box-shadow:0 0 0 2px rgba(247,218,33,.25)}
   .setup .lettersgrid input:focus{border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.45); outline:none}
+  .nytdays{display:flex; flex-wrap:wrap; gap:6px; margin:12px 0}
+  .nytdays button{padding:8px 14px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); font-weight:700; font-size:13px}
+  .nytdays button.today{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
   .resume-row{display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;
     text-align:left; background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
   .resume-row:hover{border-color:#3a4150}
@@ -252,6 +255,7 @@
         <button id="btnShare" class="hidden">Invite / copy link</button>
         <button id="btnRename" class="hidden">Change name</button>
         <button id="btnGames">Previous games</button>
+        <button id="btnNyt">NYT puzzles</button>
         <button id="btnMyId">My player ID</button>
         <button id="btnTheme">Theme: Auto</button>
         <button id="btnNew" class="hidden">New puzzle</button>
@@ -268,9 +272,22 @@
     </button>
   </section>
 
+  <!-- ============== NYT ARCHIVE ============== -->
+  <section id="nytbox" class="card setup">
+    <h2 style="margin:.2em 0">Play a real NYT puzzle</h2>
+    <p class="muted" style="margin-top:0">Every New York Times Spelling Bee since 2023 — scored against the actual NYT answer list.</p>
+    <div class="nytdays" id="nytDays"></div>
+    <div class="row2" style="margin-top:6px">
+      <label>Any day &nbsp;<input type="date" id="nytDate"></label>
+      <button id="btnNytPlay">Play</button>
+      <button id="btnNytDownload" class="ghost">Download answers</button>
+    </div>
+    <div id="nytHint" class="muted" style="margin-top:6px"></div>
+  </section>
+
   <!-- ================= SETUP ================= -->
-  <section id="setup" class="card setup">
-    <h2 style="margin:.2em 0">Set up your Spelling Bee</h2>
+  <section id="setup" class="card setup" style="margin-top:14px">
+    <h2 style="margin:.2em 0">…or make your own</h2>
     <p class="muted" style="margin-top:0">Make as many words as you can. Every word must use the <b style="color:var(--accent)">yellow center letter</b> and be at least 4 letters. Share the link and friends play the same board — you'll see each other's live scores.</p>
 
     <div class="row2" style="margin:14px 0">
@@ -286,21 +303,6 @@
     <div class="row2">
       <button id="btnStartCustom">Start this puzzle</button>
       <span id="setupHint" class="muted"></span>
-    </div>
-  </section>
-
-  <!-- ============== NYT ARCHIVE ============== -->
-  <section id="nytbox" class="card setup" style="margin-top:14px">
-    <h2 style="margin:.2em 0">Play a real NYT puzzle</h2>
-    <p class="muted" style="margin-top:0">Every New York Times Spelling Bee since 2023 — scored against the actual NYT answer list.</p>
-    <div class="row2" style="margin-top:6px">
-      <button id="btnNytToday" class="primary">Today's puzzle</button>
-      <label>or pick a day &nbsp;<input type="date" id="nytDate"></label>
-    </div>
-    <div class="row2" style="margin-top:10px">
-      <button id="btnNytPlay">Play this day</button>
-      <button id="btnNytDownload" class="ghost">Download answers</button>
-      <span id="nytHint" class="muted"></span>
     </div>
   </section>
 
@@ -1331,7 +1333,28 @@ async function loadNyt(){
   _nyt = await res.json();
   return _nyt;
 }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function isoDay(offset){                           // local-date ISO, offset days back
+  const d = new Date(); d.setDate(d.getDate() - (offset||0));
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function todayISO(){ return isoDay(0); }
+function labelForDay(iso){
+  if(iso === isoDay(0)) return 'Today';
+  if(iso === isoDay(1)) return 'Yesterday';
+  return new Date(iso+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'});
+}
+function renderNytDays(){
+  const wrap = $('#nytDays'); wrap.innerHTML='';
+  for(let i=0;i<8;i++){
+    const iso = isoDay(i);
+    if(iso < '2023-01-01') break;
+    const b = document.createElement('button');
+    if(i===0) b.className='today';
+    b.textContent = labelForDay(iso);
+    b.addEventListener('click', ()=> playNytDay(iso));
+    wrap.appendChild(b);
+  }
+}
 async function playNytDay(date){
   $('#nytHint').textContent = 'Loading…';
   let data; try{ data = await loadNyt(); }catch(e){ $('#nytHint').textContent = 'Could not load the archive.'; return; }
@@ -1356,7 +1379,7 @@ async function downloadNytDay(date){
 (function initNyt(){
   const inp = $('#nytDate');
   inp.min = '2023-01-01'; inp.max = todayISO(); inp.value = todayISO();
-  $('#btnNytToday').addEventListener('click', ()=> playNytDay(todayISO()));
+  renderNytDays();
   $('#btnNytPlay').addEventListener('click', ()=> playNytDay(inp.value || todayISO()));
   $('#btnNytDownload').addEventListener('click', ()=> downloadNytDay(inp.value || todayISO()));
 })();
@@ -1442,6 +1465,7 @@ applyTheme(currentTheme());
 
 /* ---------- previous games — full filterable list ---------- */
 $('#btnGames').addEventListener('click', ()=>{ closeMenu(); openGamesModal(); });
+$('#btnNyt').addEventListener('click', ()=>{ closeMenu(); location.href = location.origin + location.pathname + '#home'; });
 // multi-select chips within each group (Type / Standing)
 $$('#gamesFilters button').forEach(b=> b.addEventListener('click', ()=>{
   b.classList.toggle('active');
