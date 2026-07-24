@@ -711,20 +711,30 @@ const Net = {
     const { error } = await sb.from(SUPABASE_TABLE).upsert(row, { onConflict:'room,player_id' });
     if(error) throw error;
   },
-  // Pull our OWN saved row from the cloud (used on a fresh device via a handoff
-  // link) and adopt its progress if it's further along than what's local.
+  // Adopt our furthest-along progress for THIS puzzle from the cloud. We match by
+  // (player_id + the puzzle's letters/center) across EVERY room — not just the
+  // current one — so a copy saved on another device (in whatever room that device
+  // happened to use) syncs here. Sync is keyed on player+puzzle, not room.
   async pullMine(){
-    if(!this.room || !this.sb) return;
+    if(!this.sb) return;
     try{
+      const sig = s => (s||'').split('').sort().join('');
+      const mySig = sig(G.letters.join('')), myC = G.center;
       const { data, error } = await this.sb.from(SUPABASE_TABLE)
-        .select('*').eq('room', this.room).eq('player_id', PLAYER_ID).maybeSingle();
+        .select('found,name,letters,center,room').eq('player_id', PLAYER_ID);
       if(error || !data) return;
-      const cloudFound = Array.isArray(data.found) ? data.found : [];
-      if(cloudFound.length >= G.found.length){
-        const set = new Set(G.found); cloudFound.forEach(w => set.add(w));
+      let best = null;
+      for(const r of data){
+        const samePuzzle = (sig(r.letters)===mySig && (r.center||'')===myC) || r.room===this.room;
+        if(!samePuzzle) continue;
+        const f = Array.isArray(r.found) ? r.found : [];
+        if(!best || f.length > best.found.length) best = { found:f, name:r.name };
+      }
+      if(best && best.found.length >= G.found.length){
+        const set = new Set(G.found); best.found.forEach(w => set.add(w));
         G.found = [...set];
         G.score = G.found.reduce((s,w)=> s + wordScore(w, G.letters).points, 0);
-        if(data.name && !G.name) G.name = data.name;
+        if(best.name && !G.name) G.name = best.name;
       }
     }catch(e){ /* ignore */ }
   },
