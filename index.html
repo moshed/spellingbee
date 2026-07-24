@@ -1306,7 +1306,7 @@ async function startGame(letters, center, roomId, opts={}){
   G.center = center.toLowerCase();
   G.order = [0,1,2,3,4,5];
   G.nyt = opts.nytDate || null;                 // playing a specific NYT day?
-  G.presetValid = opts.valid || null;           // NYT's exact answer list for that day
+  G.presetValid = null;                         // deliberately unused: one rulebook (our dictionary)
   // NYT days get their own progress key so they don't collide with a custom /
   // multiplayer game that happens to use the same letters.
   G.roomKey = G.nyt ? ('nyt.'+G.nyt) : puzzleSignature(G.letters, G.center);
@@ -1374,15 +1374,13 @@ async function startGame(letters, center, roomId, opts={}){
   renderNetNote();
   history.replaceState(null,'', buildShareUrl());
 
-  // word list: a NYT day uses NYT's exact answers; otherwise our dictionary
-  if(G.presetValid){
-    G.valid = G.presetValid;
-    G.maxScore = maxScoreOf(G.valid, G.letters);
-    pruneFound();
-    renderScore();
-    saveProgress();
-    return;
-  }
+  // ONE rulebook. Every board — daily, shared or custom — is judged by OUR
+  // dictionary. Previously a daily was judged by that day's exact answer list
+  // while the same board opened as a shared game used our dictionary, so a word
+  // like `unfound` counted or didn't depending purely on how you got there, and
+  // cross-device sync bounced the score between the two. The daily answer lists
+  // still shape the dictionary offline (scripts/update-nyt.py adds every answer
+  // and prunes words a day rejects), but they never judge a live board.
   $('#flash').innerHTML = '<span class="msg ok">Loading word list…</span>';
   G.valid = await computeValidWords(G.letters, G.center);
   G.maxScore = maxScoreOf(G.valid, G.letters);
@@ -1399,7 +1397,7 @@ async function startGame(letters, center, roomId, opts={}){
 // recompute the score. Only runs with the REAL dictionary loaded, so a failed
 // fetch / fallback list never wrongly deletes good words.
 function pruneFound(){
-  if(!_fullDict && !G.presetValid) return;   // need a definitive valid set to prune safely
+  if(!_fullDict) return;   // only prune against the REAL dictionary, never a fallback list
   const before = G.found.length;
   G.found = G.found.filter(w => G.valid.has(w));
   G.score = G.found.reduce((s,w)=> s + wordScore(w, G.letters).points, 0);
