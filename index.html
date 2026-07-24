@@ -738,31 +738,32 @@ const Net = {
       }
     }catch(e){ /* ignore */ }
   },
-  // Which room does THIS puzzle already live in for me? Look at every row for the
-  // puzzle (matched by sorted letters + center) and pick the room where I have a
-  // row, preferring the one with the MOST players (the shared/group game) and
-  // then my furthest-along copy. Returns null if I've never played this puzzle.
-  async findMyRoom(){
-    if(!this.sb) return null;
+  // Which room should THIS puzzle be played in? Candidates are every room where I
+  // already have a row for this puzzle (matched by sorted letters + center), plus
+  // `candidate` (a room from an invite link or saved state). We pick the one with
+  // the MOST distinct players, so a device sitting in a stale solo room rejoins
+  // the shared/group game. Ties go to the explicit candidate. Null = no idea.
+  async findMyRoom(candidate){
+    if(!this.sb) return candidate || null;
     try{
       const sig = s => (s||'').split('').sort().join('');
       const mySig = sig(G.letters.join('')), myC = G.center;
       const { data, error } = await this.sb.from(SUPABASE_TABLE)
-        .select('room,found,letters,center,player_id');
-      if(error || !data) return null;
+        .select('room,letters,center,player_id');
+      if(error || !data) return candidate || null;
       const rows = data.filter(r => sig(r.letters)===mySig && (r.center||'')===myC);
       const pop = {};                                   // room -> distinct player count
       rows.forEach(r => { (pop[r.room] = pop[r.room] || new Set()).add(r.player_id); });
-      const mine = rows.filter(r => r.player_id === PLAYER_ID);
-      if(!mine.length) return null;
-      mine.sort((a,b)=>{
-        const pa = pop[a.room]?.size||0, pb = pop[b.room]?.size||0;
-        if(pb !== pa) return pb - pa;                   // most-populated (group) room first
-        const fa = Array.isArray(a.found)?a.found.length:0, fb = Array.isArray(b.found)?b.found.length:0;
-        return fb - fa;                                 // then my furthest-along copy
-      });
-      return mine[0].room;
-    }catch(e){ return null; }
+      const cands = new Set(rows.filter(r => r.player_id === PLAYER_ID).map(r => r.room));
+      if(candidate) cands.add(candidate);
+      if(!cands.size) return null;
+      let best = null, bestPop = -1;
+      for(const room of cands){
+        const p = pop[room]?.size || 0;
+        if(p > bestPop || (p === bestPop && room === candidate)){ best = room; bestPop = p; }
+      }
+      return best;
+    }catch(e){ return candidate || null; }
   },
   // Polling safety-net: re-pull the room every few seconds so scores stay in
   // sync even if a realtime event is missed (flaky mobile networks, etc.).
@@ -1271,9 +1272,14 @@ async function startGame(letters, center, roomId, opts={}){
   //     — and everyone I'm playing this puzzle with — reconverges in one room.
   //  3. brand-new puzzle with no history → a deterministic per-player room, so a
   //     second device still lands in the same place.
+  // NOTE: findMyRoom() always runs (even when a room was passed in) — every resume
+  // path hands us the room saved on THIS device, which may be a stale solo room
+  // while the real game moved on. It treats that as one candidate among the rooms
+  // this puzzle actually lives in, and picks the most-populated.
   let wantRoom = roomId;
-  if(!wantRoom && Net.configured()) wantRoom = await Net.findMyRoom();
-  if(!wantRoom && Net.configured()) wantRoom = 'self.' + PLAYER_ID + '.' + G.roomKey;
+  if(Net.configured()){
+    wantRoom = await Net.findMyRoom(wantRoom) || 'self.' + PLAYER_ID + '.' + G.roomKey;
+  }
   if(wantRoom){
     Net.room = wantRoom;                 // keep the id even if the connection fails
     if(Net.configured()){
