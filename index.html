@@ -105,9 +105,10 @@
   .lbtrack .gridline{position:absolute; top:2px; height:50px; width:1px; background:var(--line); opacity:.5; transform:translateX(-50%)}
   .lbtrack .gridlabel{position:absolute; top:56px; transform:translateX(-50%); font-size:9px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
   /* Genius milestone on the line, in yellow, label below */
-  .lbtrack .gtick{position:absolute; top:46px; width:3px; height:15px; background:var(--accent); transform:translateX(-50%); border-radius:2px; z-index:2}
+  .lbtrack .gtick{position:absolute; top:2px; height:50px; width:1px; background:var(--accent); opacity:.9; transform:translateX(-50%); z-index:2}
   .lbtrack .glabel{position:absolute; top:56px; transform:translateX(-50%); font-size:9px; font-weight:800;
-    color:var(--accent); white-space:nowrap; letter-spacing:.3px; z-index:2}
+    color:var(--accent); white-space:nowrap; letter-spacing:.3px; z-index:3;
+    text-shadow:-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 2px #000}
   /* each player = a rounded-rect bubble: initials on TOP, score below */
   .pin{position:absolute; top:4px; transform:translateX(-50%); transition:left .35s ease}
   .pin .pnum{display:inline-flex; flex-direction:column; align-items:center; padding:2px 8px 3px; border-radius:9px;
@@ -135,7 +136,7 @@
   .words-head{width:100%; text-align:left; background:transparent; border:0; border-radius:0; color:var(--muted);
     display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; font-weight:600}
   .words-head #wordsLabel{display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden}
-  .words-head .rw{text-transform:capitalize; color:var(--ink); font-weight:600; font-size:14px;
+  .words-head .rw{text-transform:uppercase; color:var(--ink); font-weight:600; font-size:14px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .words-head .rw-more{color:var(--muted); font-size:12px; font-weight:700; flex:0 0 auto}
   .words-head .chev{transition:transform .18s ease}
@@ -150,7 +151,7 @@
     font-size:12px; font-weight:700; color:var(--muted)}
   .wordsort button.active{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
   .wordgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:4px 12px}
-  .wordgrid span{padding:3px 2px; border-bottom:1px solid var(--line); text-transform:capitalize; font-size:14px}
+  .wordgrid span{padding:3px 2px; border-bottom:1px solid var(--line); text-transform:uppercase; letter-spacing:.5px; font-size:14px}
   .wordgrid span.pan{color:var(--accent); font-weight:700}
   .wordgrid span .wp{float:right; color:var(--muted); font-weight:600; font-size:12px; font-variant-numeric:tabular-nums}
   .wordgrid span.pan .wp{color:var(--accent)}
@@ -237,6 +238,8 @@
   .g-badge.lose{background:rgba(240,97,109,.18); color:var(--bad)}
   .g-badge.close{background:rgba(247,218,33,.18); color:#b99500}
   .g-badge.solo{background:var(--panel); color:var(--muted)}
+  .g-badge.nyt{background:var(--accent); color:var(--accent-ink)}
+  .g-top .g-badge + .g-badge{margin-left:4px}
   #gamesList .empty{color:var(--muted); padding:14px 4px; text-align:center}
   .row2{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--muted)}
@@ -397,14 +400,20 @@
 <!-- Previous games (full, filterable) -->
 <dialog id="gamesModal" class="dlg" style="max-width:520px; width:92vw">
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px">
-    <h2 style="margin:0; flex:1">Previous games</h2>
+    <h2 style="margin:0; flex:1">Games</h2>
     <button onclick="this.closest('dialog').close()" class="ghost">✕</button>
   </div>
   <div class="gfilters" id="gamesFilters">
     <div class="gfgroup">
       <span class="gflabel">Type</span>
+      <button data-g="type" data-v="nyt">NYT</button>
       <button data-g="type" data-v="solo">Solo</button>
       <button data-g="type" data-v="multi">Multiplayer</button>
+    </div>
+    <div class="gfgroup">
+      <span class="gflabel">Status</span>
+      <button data-g="status" data-v="played">Played</button>
+      <button data-g="status" data-v="unplayed">Unplayed</button>
     </div>
     <div class="gfgroup">
       <span class="gflabel">Standing</span>
@@ -412,8 +421,13 @@
       <button data-g="stand" data-v="close">Close</button>
       <button data-g="stand" data-v="losing">Losing</button>
     </div>
+    <div class="gfgroup">
+      <span class="gflabel">Jump to any NYT day</span>
+      <input type="date" id="gnytDate">
+      <button id="gnytGo">Play</button>
+    </div>
   </div>
-  <div id="gamesList" style="max-height:60vh; overflow-y:auto; touch-action:pan-y"></div>
+  <div id="gamesList" style="max-height:52vh; overflow-y:auto; touch-action:pan-y"></div>
 </dialog>
 
 <!-- Change-name dialog -->
@@ -1498,10 +1512,11 @@ $('#btnTheme').addEventListener('click', ()=>{
 try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ if(currentTheme()==='auto') updateThemeColor(); }); }catch(e){}
 applyTheme(currentTheme());
 
-/* ---------- previous games — full filterable list ---------- */
+/* ---------- games browser (your games + NYT days) ---------- */
 $('#btnGames').addEventListener('click', ()=>{ closeMenu(); openGamesModal(); });
-$('#btnNyt').addEventListener('click', ()=>{ closeMenu(); location.href = location.origin + location.pathname + '#home'; });
-// multi-select chips within each group (Type / Standing)
+$('#btnNyt').addEventListener('click', ()=>{ closeMenu(); openGamesModal(); });
+$('#gnytGo').addEventListener('click', ()=>{ const v=$('#gnytDate').value; if(v){ $('#gamesModal').close(); playNytDay(v); } });
+// multi-select chips within each group
 $$('#gamesFilters button').forEach(b=> b.addEventListener('click', ()=>{
   b.classList.toggle('active');
   drawGames();
@@ -1626,46 +1641,87 @@ async function fetchAllMyGames(){
     return [...by.values()].sort((a,b)=>(b.updated||0)-(a.updated||0)).map(classifyGame);
   }catch(e){ return local.map(classifyGame); }
 }
+// recent NYT days (played or not), for the games browser
+async function nytRecent(N){
+  let data; try{ data = await loadNyt(); }catch(e){ return []; }
+  const out = [];
+  for(let i=0;i<N;i++){
+    const iso = isoDay(i); if(iso < '2023-01-01') break;
+    const day = data[iso]; if(!day) continue;
+    const prog = loadProgress('nyt.'+iso);
+    out.push({ kind:'nyt', nyt:iso, letters:[...day.l], center:day.c, total:day.a.length,
+               played: !!prog, score: prog?prog.score||0:0, foundCount: prog?(prog.found||[]).length:0,
+               updated: prog?prog.updated||0:0 });
+  }
+  return out;
+}
+// build the unified list: NYT days + your custom/multiplayer games
+async function buildGames(){
+  const mine = await fetchAllMyGames();
+  const nyt  = await nytRecent(45);
+  const keyOf = d => d.room || ([...d.letters].sort().join('')+'.'+d.center);
+  const map = new Map();
+  nyt.forEach(e => map.set('nyt.'+e.nyt, e));
+  mine.forEach(g=>{
+    if(g.nyt){                                     // a NYT day you played — fold into its entry
+      const k = 'nyt.'+g.nyt, cur = map.get(k) || {kind:'nyt', nyt:g.nyt, letters:g.letters, center:g.center, total:0};
+      map.set(k, {...cur, played:true, score:g.score||0, foundCount:(g.found||[]).length, updated:g.updated||0});
+    }else{
+      map.set(keyOf(g), {kind:g.multi?'multi':'solo', letters:g.letters, center:g.center, room:g.room,
+        played:true, score:g.score||0, foundCount:(g.found||[]).length, updated:g.updated||0,
+        multi:g.multi, winning:g.winning, close:g.close, losing:g.losing, players:g.players||[]});
+    }
+  });
+  const sortKey = g => g.updated || (g.nyt ? Date.parse(g.nyt+'T12:00:00') : 0);
+  return [...map.values()].sort((a,b)=> sortKey(b) - sortKey(a));
+}
 function drawGames(){
   const list = $('#gamesList');
   const types  = $$('#gamesFilters button[data-g="type"].active').map(b=>b.dataset.v);
+  const status = $$('#gamesFilters button[data-g="status"].active').map(b=>b.dataset.v);
   const stands = $$('#gamesFilters button[data-g="stand"].active').map(b=>b.dataset.v);
-  let games = _allGames.filter(g=>{
-    if(types.length && !types.includes(g.multi ? 'multi' : 'solo')) return false;
+  const games = _allGames.filter(g=>{
+    if(types.length && !types.includes(g.kind)) return false;
+    if(status.length && !status.includes(g.played ? 'played' : 'unplayed')) return false;
     if(stands.length){                                  // standing only applies to multiplayer games
-      if(!g.multi) return false;
-      const ok = (g.winning && stands.includes('winning')) ||
-                 (g.close   && stands.includes('close'))   ||
-                 (g.losing  && stands.includes('losing'));
-      if(!ok) return false;
+      if(g.kind!=='multi') return false;
+      if(!((g.winning&&stands.includes('winning'))||(g.close&&stands.includes('close'))||(g.losing&&stands.includes('losing')))) return false;
     }
     return true;
   });
   list.innerHTML = '';
-  if(!games.length){ list.innerHTML = '<div class="empty">No games here yet.</div>'; return; }
+  if(!games.length){ list.innerHTML = '<div class="empty">Nothing matches those filters.</div>'; return; }
   games.forEach(g=>{
     const letters = (g.letters||[]).map(l => l===g.center
       ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
-    let badge = '<span class="g-badge solo">Solo</span>';
-    if(g.multi){
-      const who = '👥' + (g.players.length);
+    let badge, meta;
+    if(g.kind==='nyt'){
+      const d = new Date(g.nyt+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+      badge = `<span class="g-badge nyt">NYT</span>` + (g.played ? `<span class="g-badge win">Played</span>` : `<span class="g-badge solo">New</span>`);
+      meta  = g.played ? `${g.score} pts · ${g.foundCount} words · ${d}` : `${d} · ${g.total} words`;
+    }else if(g.multi){
+      const who = '👥'+(g.players.length);
       badge = g.close ? `<span class="g-badge close">Close · ${who}</span>`
             : g.winning ? `<span class="g-badge win">Winning · ${who}</span>`
             : `<span class="g-badge lose">Behind · ${who}</span>`;
+      meta  = `${g.score} pts · ${g.foundCount} words · ${timeAgo(g.updated)}`;
+    }else{
+      badge = `<span class="g-badge solo">Solo</span>`;
+      meta  = `${g.score} pts · ${g.foundCount} words · ${timeAgo(g.updated)}`;
     }
     const row = document.createElement('button');
     row.className = 'game-row';
-    row.innerHTML = `<div class="g-top"><span class="g-letters">${letters}</span>${badge}</div>`+
-      `<span class="g-meta">${g.score||0} pts · ${(g.found||[]).length} words · ${timeAgo(g.updated)}</span>`;
-    row.addEventListener('click', ()=>{ $('#gamesModal').close(); resumeBoard(g); });
+    row.innerHTML = `<div class="g-top"><span class="g-letters">${letters}</span>${badge}</div><span class="g-meta">${meta}</span>`;
+    row.addEventListener('click', ()=>{ $('#gamesModal').close(); if(g.kind==='nyt') playNytDay(g.nyt); else resumeBoard(g); });
     list.appendChild(row);
   });
 }
 async function openGamesModal(){
   $('#gamesList').innerHTML = '<div class="empty">Loading…</div>';
   $$('#gamesFilters button').forEach(x=> x.classList.remove('active'));   // no filter = show all
+  const gd = $('#gnytDate'); gd.min='2023-01-01'; gd.max=todayISO(); gd.value=todayISO();
   $('#gamesModal').showModal();
-  _allGames = await fetchAllMyGames();
+  _allGames = await buildGames();
   drawGames();
 }
 
