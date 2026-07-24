@@ -242,11 +242,11 @@
     <div class="menuwrap">
       <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu hidden" id="menu">
-        <button id="btnShare" class="hidden">🔗 Invite / copy link</button>
-        <button id="btnRename" class="hidden">✏️ Change name</button>
-        <button id="btnGames">🎮 Previous games</button>
-        <button id="btnMyId">🔑 My player ID</button>
-        <button id="btnTheme">🌓 Theme: Auto</button>
+        <button id="btnShare" class="hidden">Invite / copy link</button>
+        <button id="btnRename" class="hidden">Change name</button>
+        <button id="btnGames">Previous games</button>
+        <button id="btnMyId">My player ID</button>
+        <button id="btnTheme">Theme: Auto</button>
         <button id="btnNew" class="hidden">New puzzle</button>
         <button id="btnHelp">How to play</button>
       </div>
@@ -331,7 +331,7 @@
     </div>
     <div id="boardRows"></div>
     <div class="netnote muted" id="netNote"></div>
-    <button id="btnShareSheet" class="primary" style="width:100%; margin-top:12px">🔗 Invite / copy link</button>
+    <button id="btnShareSheet" class="primary" style="width:100%; margin-top:12px">Invite / copy link</button>
   </div>
 </div>
 
@@ -1321,7 +1321,7 @@ function applyTheme(mode){
   if(mode==='auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', mode);
   localStorage.setItem('hc_theme', mode);
-  $('#btnTheme').textContent = '🌓 Theme: ' + mode[0].toUpperCase() + mode.slice(1);
+  $('#btnTheme').textContent = 'Theme: ' + mode[0].toUpperCase() + mode.slice(1);
   updateThemeColor();
 }
 $('#btnTheme').addEventListener('click', ()=>{
