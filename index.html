@@ -368,6 +368,13 @@
     <input id="myIdField" readonly style="flex:1; font-family:ui-monospace,Menlo,monospace">
     <button id="copyIdBtn" class="primary">Copy</button>
   </div>
+  <!-- one-tap handoff into the iOS app (custom scheme); harmless elsewhere -->
+  <div style="margin-top:10px">
+    <a id="openInAppBtn" href="#" class="primary" style="display:inline-block; text-decoration:none;
+       padding:10px 14px; border-radius:10px; font-weight:700">Open in the iOS app</a>
+    <span class="muted" style="display:block; font-size:12px; margin-top:6px">
+      On your iPhone with World of Words installed — links that device to this ID, nothing to copy.</span>
+  </div>
   <hr style="border:none; border-top:1px solid var(--line); margin:16px 0">
   <p class="muted" style="margin-top:0">Have an ID from another browser? Paste it here to continue as that player on this device.</p>
   <div style="display:flex; gap:8px">
@@ -1613,6 +1620,9 @@ $('#btnMyId').addEventListener('click', ()=>{
   closeMenu();
   $('#myIdField').value = PLAYER_ID;
   $('#pasteIdField').value = '';
+  // hand this identity to the iOS app in one tap (no copy/paste to get wrong)
+  $('#openInAppBtn').href = 'worldofwords://link?id=' + encodeURIComponent(PLAYER_ID) +
+                            '&n=' + encodeURIComponent(G.name || localStorage.getItem('hc_name') || '');
   $('#idDlg').showModal();
 });
 $('#copyIdBtn').addEventListener('click', ()=> copyLink(PLAYER_ID, 'Player ID copied — paste it into your other browser.'));
