@@ -1099,14 +1099,16 @@ function renderBoard(){
     const place = (rankCount[ranks[i]] > 1 ? 'T' : '') + ranks[i];
     // diff vs me — computed server-side, we only ever receive counts (never words)
     const d = mine ? null : (G.diffs||{})[p.id];
-    // Concise diff: +N = words I have that they don't, −N = words they have that
-    // I don't. BOTH can be non-zero at once (equal word counts but different
-    // words), so they're shown independently rather than as one net number.
+    // Concise diff, stated from the perspective of the player in THIS row:
+    //   +N = they have N words I don't      (they're up on me)
+    //   −N = they're missing N words I have (they're down on me)
+    // Both can show at once (+1 −1) when word counts are level but the words
+    // differ — a single net number would hide that.
     let diffTxt = '';
     if(d){
       const bits = [];
-      if(d.ahead)  bits.push(`<span class="up">+${d.ahead}</span>`);
-      if(d.behind) bits.push(`<span class="down">−${d.behind}</span>`);
+      if(d.behind) bits.push(`<span class="up">+${d.behind}</span>`);
+      if(d.ahead)  bits.push(`<span class="down">−${d.ahead}</span>`);
       if(bits.length) diffTxt = ' · ' + bits.join(' ');
     }
     row.innerHTML =
