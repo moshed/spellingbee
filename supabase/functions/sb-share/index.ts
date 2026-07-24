@@ -75,9 +75,11 @@ Deno.serve(async (req) => {
 <meta property="og:image" content="${esc(img)}">
 <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(img)}">
-<meta http-equiv="refresh" content="0;url=${esc(game)}">
-</head><body style="background:#0f1115;color:#f4f6fb;font-family:sans-serif;text-align:center;padding:48px">
-Opening Spelling Bee… <a style="color:#f7da21" href="${esc(game)}">tap to play</a>
-<script>location.replace(${JSON.stringify(game)})</script></body></html>`
+</head><body style="margin:0;background:#0f1115;color:#f4f6fb;font-family:-apple-system,system-ui,sans-serif;text-align:center;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px;box-sizing:border-box">
+<div style="font-size:26px;font-weight:800">Spelling Bee</div>
+<img src="${esc(img)}" alt="Spelling Bee puzzle" style="max-width:min(520px,94vw);width:100%;border-radius:16px">
+<a href="${esc(game)}" style="display:inline-block;background:#f7da21;color:#141414;font-weight:800;font-size:18px;text-decoration:none;padding:15px 30px;border-radius:999px">Play this puzzle →</a>
+<div style="color:#9aa4b6;font-size:13px">How many words can you make?</div>
+</body></html>`
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' } })
 })

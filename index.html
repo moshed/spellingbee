@@ -240,8 +240,8 @@
   #gamesList .empty{color:var(--muted); padding:14px 4px; text-align:center}
   .row2{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--muted)}
-  .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#111521; border:1px solid var(--line);
-    padding:12px 16px; border-radius:12px; opacity:0; transition:all .25s; z-index:70}
+  .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#111521; color:#f4f6fb;
+    border:1px solid rgba(255,255,255,.14); padding:12px 16px; border-radius:12px; opacity:0; transition:all .25s; z-index:70; max-width:88vw; text-align:center}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
   .dlg{max-width:420px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:16px; padding:20px}
   .dlg::backdrop{background:rgba(0,0,0,.55)}
