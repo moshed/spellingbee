@@ -3,10 +3,24 @@
 nyt-bee.json (per-day letters/center/answers), and union any new answer words
 into words.json. Run daily by .github/workflows/update-nyt.yml."""
 import json, os, urllib.request
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    TODAY = datetime.now(ZoneInfo('America/New_York')).strftime('%Y-%m-%d')
+except Exception:
+    TODAY = datetime.utcnow().strftime('%Y-%m-%d')
 
 UPSTREAM = 'https://raw.githubusercontent.com/Adidev-Panday/nyt-games/main/data.json'
 
 def main():
+    # Cheap no-op: if today's puzzle is already in, don't download the 31MB source.
+    if os.path.exists('nyt-bee.json'):
+        try:
+            if TODAY in json.load(open('nyt-bee.json')):
+                print(f'Already have {TODAY}; nothing to do.')
+                return
+        except Exception:
+            pass
     data = json.load(urllib.request.urlopen(UPSTREAM, timeout=180))
     bee = {}
     answers = set()

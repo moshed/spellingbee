@@ -2,8 +2,9 @@ name: Update NYT Spelling Bee data
 
 on:
   schedule:
-    - cron: '0 11 * * *'    # 07:00 ET (EDT) — the source is usually ready by ~7am ET
-    - cron: '0 14 * * *'    # ~10:00 ET safety-net in case the source updated late that day
+    # Every 10 min from ~7am–1pm ET. The script no-ops instantly once today's
+    # puzzle is already in nyt-bee.json, so it just retries until it lands.
+    - cron: '*/10 11-17 * * *'
   workflow_dispatch:         # allow manual run from the Actions tab
 
 permissions:
