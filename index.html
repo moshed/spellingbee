@@ -1227,12 +1227,13 @@ async function startGame(letters, center, roomId, opts={}){
   // this player is live from the first word.
   await Net.leave();
   Net.live = false; Net.room = null;
-  // Room selection: a link/invite uses its room; NYT days use a DETERMINISTIC
-  // private room (same puzzle + same player id = same room), so your progress
-  // syncs across your own devices; other solo games get an ephemeral room.
-  const wantRoom = roomId
-    || (G.nyt && Net.configured() ? ('nyt.'+G.nyt+'.'+PLAYER_ID) : null)
-    || (Net.configured() ? randomRoom() : null);
+  // Room selection. Your OWN games (any puzzle) use a deterministic per-player
+  // room `self.<playerId>.<puzzle>`, so the same player id on another device
+  // lands in the same room and your progress syncs everywhere. A link/invite to
+  // SOMEONE ELSE'S room (doesn't start with your own prefix) joins that room.
+  const myRoom = 'self.' + PLAYER_ID + '.' + G.roomKey;
+  const joinedRoom = roomId && !roomId.startsWith('self.' + PLAYER_ID + '.');
+  const wantRoom = joinedRoom ? roomId : (Net.configured() ? myRoom : null);
   if(wantRoom){
     Net.room = wantRoom;                 // keep the id even if the connection fails
     if(Net.configured()){
