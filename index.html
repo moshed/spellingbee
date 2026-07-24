@@ -152,8 +152,8 @@
   .flash .msg{position:absolute; left:50%; transform:translateX(-50%); padding:2px 12px; border-radius:20px; white-space:nowrap}
   .flash .ok{background:rgba(63,185,80,.15); color:var(--good)}
   .flash .no{background:rgba(240,97,109,.15); color:var(--bad)}
-  .entry{display:flex; align-items:center; justify-content:center; min-height:40px;
-    font-size:30px; font-weight:800; letter-spacing:4px; text-transform:uppercase; user-select:none}
+  .entry{display:flex; align-items:center; justify-content:center; height:48px; overflow:hidden;
+    font-size:30px; font-weight:800; letter-spacing:4px; text-transform:uppercase; user-select:none; white-space:nowrap}
   .entry .caret{width:3px; height:32px; background:var(--accent); display:inline-block; margin-left:2px; animation:blink 1s steps(1) infinite}
   .entry .center{color:var(--accent)}
   @keyframes blink{50%{opacity:0}}
@@ -847,6 +847,11 @@ function renderEntry(){
     e.appendChild(s);
   }
   const caret = document.createElement('span'); caret.className='caret'; e.appendChild(caret);
+  // shrink long words so they don't run off-screen (row height stays fixed)
+  const n = G.typed.length;
+  const size = n <= 12 ? 30 : Math.max(15, Math.round(30 * 12 / n));
+  e.style.fontSize = size + 'px';
+  e.style.letterSpacing = (n <= 12 ? 4 : 2) + 'px';
 }
 function renderFound(){
   const grid = $('#wordGrid'); grid.innerHTML='';
