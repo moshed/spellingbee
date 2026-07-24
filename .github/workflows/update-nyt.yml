@@ -2,7 +2,8 @@ name: Update NYT Spelling Bee data
 
 on:
   schedule:
-    - cron: '30 13 * * *'   # 13:30 UTC (~9:30 AM ET) — after upstream commits (~10–11 UTC)
+    - cron: '0 11 * * *'    # 07:00 ET (EDT) — the source is usually ready by ~7am ET
+    - cron: '0 14 * * *'    # ~10:00 ET safety-net in case the source updated late that day
   workflow_dispatch:         # allow manual run from the Actions tab
 
 permissions:
