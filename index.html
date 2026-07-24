@@ -716,11 +716,12 @@ const Net = {
   // current one — so a copy saved on another device (in whatever room that device
   // happened to use) syncs here. Sync is keyed on player+puzzle, not room.
   async pullMine(){
-    if(!this.sb) return;
+    if(!this.configured()) return;
     try{
+      const sb = await this.client();          // may be a cold load — don't touch this.sb directly
       const sig = s => (s||'').split('').sort().join('');
       const mySig = sig(G.letters.join('')), myC = G.center;
-      const { data, error } = await this.sb.from(SUPABASE_TABLE)
+      const { data, error } = await sb.from(SUPABASE_TABLE)
         .select('found,name,letters,center,room').eq('player_id', PLAYER_ID);
       if(error || !data) return;
       let best = null;
@@ -744,11 +745,14 @@ const Net = {
   // the MOST distinct players, so a device sitting in a stale solo room rejoins
   // the shared/group game. Ties go to the explicit candidate. Null = no idea.
   async findMyRoom(candidate){
-    if(!this.sb) return candidate || null;
+    if(!this.configured()) return candidate || null;
     try{
+      // NB: must go through client() — on a cold page load this.sb is still null
+      // (it's created lazily in join(), which runs AFTER this).
+      const sb = await this.client();
       const sig = s => (s||'').split('').sort().join('');
       const mySig = sig(G.letters.join('')), myC = G.center;
-      const { data, error } = await this.sb.from(SUPABASE_TABLE)
+      const { data, error } = await sb.from(SUPABASE_TABLE)
         .select('room,letters,center,player_id');
       if(error || !data) return candidate || null;
       const rows = data.filter(r => sig(r.letters)===mySig && (r.center||'')===myC);
