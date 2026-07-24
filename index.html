@@ -231,6 +231,10 @@
   .game-row .g-top{display:flex; align-items:center; gap:8px}
   .game-row .g-letters{flex:1; min-width:0; font-weight:800; letter-spacing:3px; text-transform:uppercase;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  /* centre letter: yellow on a dark chip so it stays legible in BOTH themes
+     (plain yellow text washed out against the light background) */
+  .game-row .g-center{color:var(--accent); background:#141414; border-radius:4px;
+    padding:1px 6px; margin-right:2px; letter-spacing:normal}
   .game-row .g-meta{color:var(--muted); font-size:12px}
   .g-badge{font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap}
   .g-badge.win{background:rgba(63,185,80,.18); color:var(--good)}
@@ -1735,8 +1739,11 @@ function drawGames(){
   list.innerHTML = '';
   if(!games.length){ list.innerHTML = '<div class="empty">Nothing matches those filters.</div>'; return; }
   games.forEach(g=>{
-    const letters = (g.letters||[]).map(l => l===g.center
-      ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
+    // centre letter ALWAYS leads (daily entries come in alphabetical order, which
+    // buried it mid-word), then the rest of the outer letters
+    const outer = (g.letters||[]).filter(l => l !== g.center);
+    const letters = [`<b class="g-center">${escapeHtml(g.center||'')}</b>`]
+      .concat(outer.map(escapeHtml)).join(' ');
     const dstr = g.nyt ? new Date(g.nyt+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '';
     const badges = [];
     if(g.nyt) badges.push(`<span class="g-badge nyt">Daily</span>`);
