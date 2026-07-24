@@ -1206,9 +1206,39 @@ function submitWord(){
   if(!G.valid.has(w)) return flash('no','Not in word list');
 
   const sc = wordScore(w, G.letters);
+  const prevScore = G.score;
   G.found.push(w); G.score += sc.points;
   flash('ok', (sc.pangram ? 'Pangram! ' : '') + '+' + sc.points);
   renderFound(); renderScore(); saveProgress(); pushScore();
+  enqueueOvertakes(prevScore);        // buzz anyone we just went past
+}
+
+/* Push a "X just passed you" alert to anyone this word overtook.
+   The passer is the authority on the event, so THIS browser enqueues it — the
+   same contract the iOS app uses (wow_push_queue → wow-push → APNs). Without
+   this, getting passed by a browser player notified nobody. Fire-and-forget:
+   a failed alert must never disturb the game. */
+async function enqueueOvertakes(prevScore){
+  if(!Net.configured()) return;
+  const targets = Object.entries(G.players)
+    .filter(([pid,p]) => pid !== PLAYER_ID && prevScore <= (p.score||0) && G.score > (p.score||0));
+  if(!targets.length) return;
+  const myName = G.name || 'Someone';
+  try{
+    const sb = await Net.client();
+    for(const [pid,p] of targets){
+      await sb.from('wow_push_queue').insert({
+        to_player: pid, game: 'bee', kind: 'overtake',
+        title: `${myName} just passed you`,
+        body: `${myName} is on ${G.score} — you're on ${p.score||0}. Back to the hive.`,
+        dedup: `pass-${PLAYER_ID}-${pid}-${G.score}`
+      });
+    }
+    fetch(SUPABASE_URL + '/functions/v1/wow-push', {
+      method:'POST', headers:{ 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
+      body:'{}'
+    }).catch(()=>{});
+  }catch(e){ /* never let a notification break play */ }
 }
 
 /* ============================================================
