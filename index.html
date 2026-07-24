@@ -108,7 +108,7 @@
   .lbtrack .gtick{position:absolute; top:2px; height:50px; width:1px; background:var(--accent); opacity:.9; transform:translateX(-50%); z-index:2}
   .lbtrack .glabel{position:absolute; top:56px; transform:translateX(-50%); font-size:9px; font-weight:800;
     color:var(--accent); white-space:nowrap; letter-spacing:.3px; z-index:3;
-    text-shadow:-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 2px #000}
+    -webkit-text-stroke:2px #000; paint-order:stroke fill}
   /* each player = a rounded-rect bubble: initials on TOP, score below */
   .pin{position:absolute; top:4px; transform:translateX(-50%); transition:left .35s ease}
   .pin .pnum{display:inline-flex; flex-direction:column; align-items:center; padding:2px 8px 3px; border-radius:9px;
@@ -1203,7 +1203,7 @@ async function startGame(letters, center, roomId, opts={}){
     G.found = prev.found||[]; G.score = prev.score||0;
     G.startedAt = prev.startedAt || now();
     if(!G.name && prev.name) G.name = prev.name;
-    if(prev.room && !roomId) roomId = prev.room;
+    if(prev.room && !roomId && !G.nyt) roomId = prev.room;   // NYT uses its deterministic room, not a saved one
   }else{
     G.found = []; G.score = 0; G.startedAt = now();
   }
@@ -1227,7 +1227,12 @@ async function startGame(letters, center, roomId, opts={}){
   // this player is live from the first word.
   await Net.leave();
   Net.live = false; Net.room = null;
-  const wantRoom = roomId || (Net.configured() ? randomRoom() : null);
+  // Room selection: a link/invite uses its room; NYT days use a DETERMINISTIC
+  // private room (same puzzle + same player id = same room), so your progress
+  // syncs across your own devices; other solo games get an ephemeral room.
+  const wantRoom = roomId
+    || (G.nyt && Net.configured() ? ('nyt.'+G.nyt+'.'+PLAYER_ID) : null)
+    || (Net.configured() ? randomRoom() : null);
   if(wantRoom){
     Net.room = wantRoom;                 // keep the id even if the connection fails
     if(Net.configured()){
