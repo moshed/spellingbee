@@ -139,6 +139,8 @@
   .wordgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:4px 12px}
   .wordgrid span{padding:3px 2px; border-bottom:1px solid var(--line); text-transform:capitalize; font-size:14px}
   .wordgrid span.pan{color:var(--accent); font-weight:700}
+  .wordgrid span .wp{float:right; color:var(--muted); font-weight:600; font-size:12px; font-variant-numeric:tabular-nums}
+  .wordgrid span.pan .wp{color:var(--accent)}
   .wordgrid .empty{color:var(--muted); grid-column:1/-1; padding:6px 0}
 
   /* ---- input row ---- */
@@ -292,6 +294,7 @@
         <div class="wordsort" id="wordSort">
           <button data-sort="az" class="active">A–Z</button>
           <button data-sort="recent">Recent</button>
+          <button data-sort="points">Points</button>
         </div>
         <div class="wordgrid" id="wordGrid"></div>
       </div>
@@ -844,13 +847,26 @@ function renderFound(){
   if(G.found.length === 0){
     grid.innerHTML = '<span class="empty">No words yet — find one that uses the yellow center letter.</span>';
   }else{
-    // 'az' = alphabetical, 'recent' = order gotten (newest first)
-    const list = (G.foundSort === 'recent') ? [...G.found].reverse() : [...G.found].sort();
+    // 'az' = alphabetical, 'recent' = order gotten (newest first),
+    // 'points' = highest-scoring first (pangrams on top), ties A–Z
+    let list;
+    if(G.foundSort === 'recent'){
+      list = [...G.found].reverse();
+    }else if(G.foundSort === 'points'){
+      list = [...G.found].sort((a,b)=> wordScore(b,G.letters).points - wordScore(a,G.letters).points || a.localeCompare(b));
+    }else{
+      list = [...G.found].sort();
+    }
     list.forEach(w=>{
       const s = document.createElement('span');
       const sc = wordScore(w, G.letters);
       if(sc.pangram) s.className='pan';
       s.textContent = w;
+      if(G.foundSort === 'points'){
+        const b = document.createElement('i');
+        b.className = 'wp'; b.textContent = sc.points;
+        s.appendChild(b);
+      }
       grid.appendChild(s);
     });
   }
