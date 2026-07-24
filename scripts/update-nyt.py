@@ -38,9 +38,30 @@ def main():
     json.dump(bee, open('nyt-bee.json', 'w'), separators=(',', ':'), sort_keys=True)
 
     words = set(json.load(open('words.json'))) if os.path.exists('words.json') else set()
-    merged = sorted(words | {w for w in answers if w.isalpha() and len(w) >= 4})
-    json.dump(merged, open('words.json', 'w'), separators=(',', ':'))
-    print(f'nyt-bee.json: {len(bee)} days; words.json: {len(merged)} words')
+    # ADD: every real NYT answer word (authoritative)
+    words |= {w for w in answers if w.isalpha() and len(w) >= 4}
+    # PRUNE (safe): a NYT day publishes the COMPLETE valid list, so a word buildable
+    # from that day's letters but absent from its answers is one NYT rejects — drop it.
+    # But never drop a common word (common-words.json) or any word NYT ever accepted,
+    # so an occasional incomplete source day can't delete a good word. Only the recent
+    # window is re-checked each run (older days handled on the day they first landed).
+    common = set(json.load(open('common-words.json'))) if os.path.exists('common-words.json') else set()
+    protected = common | {a for a in answers}
+    recent = sorted(bee.keys())[-30:]
+    remove = set()
+    for date in recent:
+        d = bee[date]
+        letters, c, ans = set(d['l']), d['c'], set(d['a'])
+        if len(letters) != 7 or c not in letters or len(ans) < 15:
+            continue
+        if not any(set(w) == letters for w in ans):   # sanity: must contain a pangram
+            continue
+        constructible = {w for w in words if len(w) >= 4 and c in w and all(ch in letters for ch in w)}
+        remove |= (constructible - ans - protected)
+    words -= remove
+
+    json.dump(sorted(words), open('words.json', 'w'), separators=(',', ':'))
+    print(f'nyt-bee.json: {len(bee)} days; words.json: {len(words)} words (pruned {len(remove)})')
 
 if __name__ == '__main__':
     main()
