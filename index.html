@@ -1218,6 +1218,13 @@ function submitWord(){
    same contract the iOS app uses (wow_push_queue → wow-push → APNs). Without
    this, getting passed by a browser player notified nobody. Fire-and-forget:
    a failed alert must never disturb the game. */
+/* "Jul 24" for a dated puzzle, so a lock-screen banner says which board. */
+function puzLabel(){
+  try{
+    const el = document.getElementById('puzDate');
+    return el && el.textContent ? el.textContent.replace(/,.*$/, '') : '';
+  }catch(e){ return ''; }
+}
 async function enqueueOvertakes(prevScore){
   if(!Net.configured()) return;
   const targets = Object.entries(G.players)
@@ -1229,8 +1236,8 @@ async function enqueueOvertakes(prevScore){
     for(const [pid,p] of targets){
       await sb.from('wow_push_queue').insert({
         to_player: pid, game: 'bee', kind: 'overtake',
-        title: `${myName} just passed you`,
-        body: `${myName} is on ${G.score} — you're on ${p.score||0}. Back to the hive.`,
+        title: `Spelling Bee${puzLabel() ? ' · ' + puzLabel() : ''}`,
+        body: `${myName} just passed you — ${G.score} to your ${p.score||0}.`,
         dedup: `pass-${PLAYER_ID}-${pid}-${G.score}`
       });
     }
