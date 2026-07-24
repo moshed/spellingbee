@@ -94,17 +94,17 @@
 
   /* ---- leaderboard number line ---- */
   .leaderboard{padding:2px 26px 4px; cursor:pointer; -webkit-tap-highlight-color:transparent}
-  .lbtrack{position:relative; height:56px}
-  .lbtrack .base{position:absolute; left:0; right:0; top:22px; height:3px; background:var(--line); border-radius:3px}
-  /* the one milestone: Genius at 70% of the max, in yellow */
-  .lbtrack .gtick{position:absolute; top:16px; width:3px; height:15px; background:var(--accent); transform:translateX(-50%); border-radius:2px}
-  .lbtrack .glabel{position:absolute; top:0; transform:translateX(-50%); font-size:10px; font-weight:800;
+  .lbtrack{position:relative; height:60px}
+  .lbtrack .base{position:absolute; left:0; right:0; top:46px; height:3px; background:var(--line); border-radius:3px}
+  .lbtrack .lblines{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible}
+  /* Genius milestone on the line, in yellow, label below */
+  .lbtrack .gtick{position:absolute; top:40px; width:3px; height:15px; background:var(--accent); transform:translateX(-50%); border-radius:2px}
+  .lbtrack .glabel{position:absolute; top:49px; transform:translateX(-50%); font-size:9px; font-weight:800;
     color:var(--accent); white-space:nowrap; letter-spacing:.3px}
-  /* each player = a score bubble with their initial directly underneath, placed
-     by score. Tied players share one bubble; close players drop to a lower lane
-     so nothing overlaps and it's obvious who's ahead (furthest right). */
-  .pin{position:absolute; top:24px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
-    gap:3px; transition:left .35s ease}
+  /* each player = a score bubble with their initial beneath, sitting ABOVE the
+     line and connected to its exact spot by a pointer */
+  .pin{position:absolute; top:2px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
+    gap:2px; transition:left .35s ease}
   .pin .pnum{min-width:26px; height:24px; padding:0 8px; border-radius:999px; border:2px solid var(--bg);
     background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
     font-weight:800; font-size:12px; font-variant-numeric:tabular-nums}
@@ -112,6 +112,11 @@
   .pin .pini{font-size:10px; font-weight:700; color:var(--muted); max-width:70px; line-height:1;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pin.me .pini{color:var(--ink)}
+  /* the puzzle max — a distinct black bubble at the end of the line */
+  .maxpin{position:absolute; top:34px; transform:translateX(-50%); z-index:1}
+  .maxpin .mnum{min-width:24px; height:24px; padding:0 7px; border-radius:999px; background:#000; color:#fff;
+    border:2px solid var(--muted); display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:11px; font-variant-numeric:tabular-nums}
 
   /* ---- overflow menu (New / How to play) ---- */
   .menuwrap{position:relative; flex:0 0 auto}
@@ -916,31 +921,56 @@ function renderBoard(){
   entries.forEach(p=>{ const k=p.score||0; if(!byScore.has(k)) byScore.set(k,[]); byScore.get(k).push(p); });
   const groups = [...byScore.entries()].map(([score,ps])=>({score, ps})).sort((a,b)=> a.score - b.score);
 
-  // Bubbles stay on ONE line (vertically aligned) and move only horizontally.
-  // ZOOM the axis to the players' actual score range so they spread out and
-  // don't overlap. If everyone is still clustered (tiny range), the lower score
-  // simply sits behind the leader (z-index). Genius stays only if it still fits.
-  const scores = groups.map(g=>g.score);
-  const lo = Math.min(...scores), hi = Math.max(...scores);
-  const M = 0.12;                                   // horizontal margin so edge bubbles aren't clipped
-  const xOf = (s)=> (hi>lo) ? M + (1-2*M)*((s-lo)/(hi-lo)) : 0.5;
+  // Absolute scale 0 → max: the line is progress toward the puzzle's max score.
+  // Each bubble's TRUE spot on the line = score / max; bubbles sit above the line
+  // and connect down to that exact spot with a pointer. Bubbles are nudged apart
+  // horizontally only enough to not overlap, so the pointer shows the real spot.
+  const maxScore = Math.max(G.maxScore||0, ...groups.map(g=>g.score), 1);
+  const ML = 0.06, SPAN = 0.78;                    // players occupy 6%..84%; max bubble sits past that
+  const trueX = (s)=> ML + SPAN * Math.min(1, (s||0)/maxScore);
+  const GAP = 0.13;
+  const items = groups.map(g=>({g, tx:trueX(g.score)})).sort((a,b)=> a.tx - b.tx);
+  let prev = -1;
+  items.forEach(o=>{ o.bx = Math.max(o.tx, prev + GAP); prev = o.bx; });
+  const over = items.length ? (items[items.length-1].bx - (ML+SPAN)) : 0;
+  if(over > 0) items.forEach(o=> o.bx = Math.max(ML, o.bx - over));
 
-  // Genius at 70% of the puzzle's max — keep it only if it lands on the zoomed
-  // axis and doesn't collide with a bubble.
-  const gScore = 0.7 * (G.maxScore||0), gx = xOf(gScore);
-  const geniusFits = (G.maxScore>0) && hi>lo && gx>0.03 && gx<0.97 &&
-                     !groups.some(g => Math.abs(xOf(g.score)-gx) < 0.09);
-  if(geniusFits){
+  // Genius milestone (70% of max) on the line, if it doesn't collide with a spot.
+  const gx = trueX(0.7 * maxScore);
+  if(G.maxScore>0 && gx>0.03 && gx<ML+SPAN && !items.some(o=> Math.abs(o.tx-gx) < 0.05)){
     const gt=document.createElement('span'); gt.className='gtick'; gt.style.left=(gx*100)+'%'; gt.title='Genius'; track.appendChild(gt);
     const gl=document.createElement('span'); gl.className='glabel'; gl.style.left=(gx*100)+'%'; gl.textContent='Genius'; track.appendChild(gl);
   }
 
-  groups.forEach((g,i)=>{
-    const mine = g.ps.some(p => p.id === PLAYER_ID);
+  // pointers: elbow from each bubble down to its exact spot on the line
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','lblines');
+  svg.setAttribute('viewBox','0 0 100 60'); svg.setAttribute('preserveAspectRatio','none');
+  items.forEach(o=>{
+    const bx=(o.bx*100).toFixed(2), tx=(o.tx*100).toFixed(2);
+    const pl=document.createElementNS(NS,'polyline');
+    pl.setAttribute('points', `${bx},34 ${bx},39 ${tx},42 ${tx},46`);   // down · across · down to the line
+    pl.setAttribute('fill','none'); pl.setAttribute('stroke','var(--muted)'); pl.setAttribute('stroke-width','1'); pl.setAttribute('vector-effect','non-scaling-stroke');
+    svg.appendChild(pl);
+  });
+  track.appendChild(svg);
+
+  // the puzzle max, in a distinct black bubble at the end of the line
+  if(G.maxScore>0){
+    const mx=document.createElement('div'); mx.className='maxpin';
+    mx.style.left=((ML+SPAN)+0.09)*100+'%';
+    mx.innerHTML=`<span class="mnum">${maxScore}</span>`;
+    mx.title='Max possible score: '+maxScore;
+    track.appendChild(mx);
+  }
+
+  // player bubbles (score + initial) above the line
+  items.forEach((o,i)=>{
+    const g=o.g, mine=g.ps.some(p => p.id === PLAYER_ID);
     const pin = document.createElement('div');
     pin.className = 'pin' + (mine?' me':'');
-    pin.style.left = (xOf(g.score)*100)+'%';
-    pin.style.zIndex = String(1 + i);   // rank order (leader in front) — kept low so the ⋯ menu covers them
+    pin.style.left = (o.bx*100)+'%';
+    pin.style.zIndex = String(2 + i);   // rank order (leader in front) — low so the ⋯ menu covers them
     const inits = g.ps.map(p => p.id===PLAYER_ID ? 'you' : initials(p.name)).join(' ');
     pin.innerHTML = `<span class="pnum">${g.score}</span><span class="pini">${escapeHtml(inits)}</span>`;
     pin.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`).join('\n');
