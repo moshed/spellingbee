@@ -267,22 +267,6 @@
     </div>
   </header>
 
-  <!-- ============== RESUME last game (quick) ============== -->
-  <section id="resume" class="hidden" style="margin-bottom:14px">
-    <button class="resume-row" id="resumeLast">
-      <span class="rl-letters" id="resumeLastLetters"></span>
-      <span class="rl-meta" id="resumeLastMeta"></span>
-    </button>
-  </section>
-
-  <!-- ============== ALL PUZZLES (NYT + your games) ============== -->
-  <section style="margin-bottom:14px">
-    <button class="resume-row" id="openPuzzles" style="justify-content:space-between">
-      <span class="rl-letters" style="letter-spacing:0; text-transform:none">Previous puzzles</span>
-      <span class="rl-meta">NYT days + your games ›</span>
-    </button>
-  </section>
-
   <!-- ================= SETUP ================= -->
   <section id="setup" class="card setup">
     <h2 style="margin:.2em 0">…or make your own</h2>
@@ -1233,7 +1217,6 @@ async function startGame(letters, center, roomId, opts={}){
   // swap screens
   document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
-  $('#resume').classList.add('hidden');
   $('#game').classList.remove('hidden');
   ['#btnNew','#btnShare','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
@@ -1384,7 +1367,6 @@ async function playNytDay(date){
   const outer = [...day.l].filter(l => l !== day.c);      // center first, then outer letters
   startGame([day.c, ...outer], day.c, null, { valid: new Set(day.a), nytDate: date });
 }
-$('#openPuzzles').addEventListener('click', openGamesModal);
 
 /* ---------- events ---------- */
 document.addEventListener('keydown', (e)=>{
@@ -1535,19 +1517,6 @@ $('#joinGo').addEventListener('click', ()=>{
   if(joinRoute){ const r = joinRoute; joinRoute = null; startGame(r.letters, r.center, r.room); }
 });
 
-// ---- Home screen: quick "resume last game" button (just the most recent) ----
-function renderResume(){
-  const boards = listRecentBoards();
-  const sec = $('#resume');
-  if(!boards.length){ sec.classList.add('hidden'); return; }
-  const d = boards[0];   // most-recently-updated
-  const letters = (d.letters||[]).map(l => l===d.center
-    ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
-  sec.classList.remove('hidden');
-  $('#resumeLastLetters').innerHTML = '▶ ' + letters;
-  $('#resumeLastMeta').textContent = (d.room?'👥 ':'') + (d.score||0) + ' pts · ' + (d.found||[]).length + ' words · ' + timeAgo(d.updated||d.startedAt);
-  $('#resumeLast').onclick = ()=> resumeBoard(d);
-}
 
 // ---- Previous games modal: all games I've played + standings + filters ----
 let _allGames = [];
@@ -1691,7 +1660,6 @@ setInterval(()=>{ Net.refresh(); }, 3500);
 let joinRoute = null;   // pending invite route while the join dialog is open
 (function init(){
   buildSetupGrid();
-  renderResume();
   const savedName = localStorage.getItem('hc_name');
   if(savedName){ $('#nameInput').value = savedName; G.name = savedName; }
 
