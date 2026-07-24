@@ -200,7 +200,8 @@
   .board .who{flex:1; min-width:0}
   .board .who b{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .board .who small{color:var(--muted); font-size:12px}
-  .board .diff{color:var(--accent); font-weight:700}
+  .board .up{color:var(--good); font-weight:700}
+  .board .down{color:var(--bad); font-weight:700}
   .board .pts{font-weight:800; font-size:18px; text-align:right}
   .board .me{color:var(--accent)}
   .dotlive{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(63,185,80,.6);animation:pulse 1.6s infinite}
@@ -1098,7 +1099,16 @@ function renderBoard(){
     const place = (rankCount[ranks[i]] > 1 ? 'T' : '') + ranks[i];
     // diff vs me — computed server-side, we only ever receive counts (never words)
     const d = mine ? null : (G.diffs||{})[p.id];
-    const diffTxt = d ? ` · <span class="diff">${d.ahead} they don't have</span>` : '';
+    // Concise diff: +N = words I have that they don't, −N = words they have that
+    // I don't. BOTH can be non-zero at once (equal word counts but different
+    // words), so they're shown independently rather than as one net number.
+    let diffTxt = '';
+    if(d){
+      const bits = [];
+      if(d.ahead)  bits.push(`<span class="up">+${d.ahead}</span>`);
+      if(d.behind) bits.push(`<span class="down">−${d.behind}</span>`);
+      if(bits.length) diffTxt = ' · ' + bits.join(' ');
+    }
     row.innerHTML =
       `<span style="width:30px;text-align:center;font-weight:700;color:var(--muted)">${place}</span>`+
       `<div class="who"><b class="${mine?'me':''}">${escapeHtml(p.name||'Player')}${mine?' (you)':''}</b>`+
@@ -1112,7 +1122,7 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 function renderNetNote(){
   const el = $('#netNote');
   if(Net.live){
-    el.innerHTML = '<span class="dotlive" style="display:inline-block;vertical-align:middle"></span> Live via Supabase — scores update in real time.';
+    el.innerHTML = '';                    // all good — say nothing, the scores speak for themselves
   }else if(Net.configured()){
     el.innerHTML = '<span class="dotoff" style="display:inline-block;vertical-align:middle"></span> Couldn\'t reach Supabase — playing on the offline scoreboard.';
   }else{
