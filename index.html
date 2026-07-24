@@ -289,6 +289,21 @@
     </div>
   </section>
 
+  <!-- ============== NYT ARCHIVE ============== -->
+  <section id="nytbox" class="card setup" style="margin-top:14px">
+    <h2 style="margin:.2em 0">Play a real NYT puzzle</h2>
+    <p class="muted" style="margin-top:0">Every New York Times Spelling Bee since 2023 — scored against the actual NYT answer list.</p>
+    <div class="row2" style="margin-top:6px">
+      <button id="btnNytToday" class="primary">Today's puzzle</button>
+      <label>or pick a day &nbsp;<input type="date" id="nytDate"></label>
+    </div>
+    <div class="row2" style="margin-top:10px">
+      <button id="btnNytPlay">Play this day</button>
+      <button id="btnNytDownload" class="ghost">Download answers</button>
+      <span id="nytHint" class="muted"></span>
+    </div>
+  </section>
+
   <!-- ================= GAME ================= -->
   <section id="game" class="game hidden">
     <!-- leaderboard number-line: players placed by score, rank levels ticked -->
@@ -772,8 +787,13 @@ function puzzleSignature(letters, center){
 /* ---------- persistence of my own progress ---------- */
 function saveProgress(){
   const data = {name:G.name, found:G.found, score:G.score, startedAt:G.startedAt,
-                letters:G.letters, center:G.center, room:Net.room, updated:now()};
+                letters:G.letters, center:G.center, room:Net.room, updated:now(), nyt:G.nyt||null};
   try{ localStorage.setItem('hc_game_'+G.roomKey, JSON.stringify(data)); }catch(e){}
+}
+// Resume a saved board — a NYT day reloads NYT's answer list, otherwise normal.
+function resumeBoard(d){
+  if(d && d.nyt) playNytDay(d.nyt);
+  else startGame(d.letters, d.center, d.room);
 }
 function loadProgress(roomKey){
   try{ return JSON.parse(localStorage.getItem('hc_game_'+roomKey) || 'null'); }catch(e){ return null; }
@@ -1140,11 +1160,15 @@ function parseHash(){
           me:p.get('me'), name:p.get('n')};
 }
 
-async function startGame(letters, center, roomId){
+async function startGame(letters, center, roomId, opts={}){
   G.letters = letters.map(x=>x.toLowerCase());
   G.center = center.toLowerCase();
   G.order = [0,1,2,3,4,5];
-  G.roomKey = puzzleSignature(G.letters, G.center);
+  G.nyt = opts.nytDate || null;                 // playing a specific NYT day?
+  G.presetValid = opts.valid || null;           // NYT's exact answer list for that day
+  // NYT days get their own progress key so they don't collide with a custom /
+  // multiplayer game that happens to use the same letters.
+  G.roomKey = G.nyt ? ('nyt.'+G.nyt) : puzzleSignature(G.letters, G.center);
   G.name = ($('#nameInput').value.trim()) || G.name || localStorage.getItem('hc_name') || '';
 
   // restore my saved progress on this board
@@ -1168,6 +1192,7 @@ async function startGame(letters, center, roomId){
   document.body.classList.add('playing');
   $('#setup').classList.add('hidden');
   $('#resume').classList.add('hidden');
+  $('#nytbox').classList.add('hidden');
   $('#game').classList.remove('hidden');
   ['#btnNew','#btnShare','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
@@ -1195,7 +1220,15 @@ async function startGame(letters, center, roomId){
   renderNetNote();
   history.replaceState(null,'', buildShareUrl());
 
-  // dictionary (may take a moment on first load)
+  // word list: a NYT day uses NYT's exact answers; otherwise our dictionary
+  if(G.presetValid){
+    G.valid = G.presetValid;
+    G.maxScore = maxScoreOf(G.valid, G.letters);
+    pruneFound();
+    renderScore();
+    saveProgress();
+    return;
+  }
   $('#flash').innerHTML = '<span class="msg ok">Loading word list…</span>';
   G.valid = await computeValidWords(G.letters, G.center);
   G.maxScore = maxScoreOf(G.valid, G.letters);
@@ -1212,7 +1245,7 @@ async function startGame(letters, center, roomId){
 // recompute the score. Only runs with the REAL dictionary loaded, so a failed
 // fetch / fallback list never wrongly deletes good words.
 function pruneFound(){
-  if(!_fullDict) return;
+  if(!_fullDict && !G.presetValid) return;   // need a definitive valid set to prune safely
   const before = G.found.length;
   G.found = G.found.filter(w => G.valid.has(w));
   G.score = G.found.reduce((s,w)=> s + wordScore(w, G.letters).points, 0);
@@ -1289,6 +1322,44 @@ function startCustom(){
   if(new Set(vals).size !== 7) return toast('Use 7 different letters.');
   startGame(vals, vals[centerIdx], null);
 }
+
+/* ---------- NYT archive ---------- */
+let _nyt = null;                                  // lazy-loaded {date:{c,l,a}}
+async function loadNyt(){
+  if(_nyt) return _nyt;
+  const res = await fetch('nyt-bee.json', {cache:'no-cache'});
+  _nyt = await res.json();
+  return _nyt;
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+async function playNytDay(date){
+  $('#nytHint').textContent = 'Loading…';
+  let data; try{ data = await loadNyt(); }catch(e){ $('#nytHint').textContent = 'Could not load the archive.'; return; }
+  const day = data[date];
+  if(!day){ $('#nytHint').textContent = 'No NYT puzzle for that date.'; return; }
+  $('#nytHint').textContent = '';
+  // display order: center first, then the outer letters
+  const outer = [...day.l].filter(l => l !== day.c);
+  startGame([day.c, ...outer], day.c, null, { valid: new Set(day.a), nytDate: date });
+}
+async function downloadNytDay(date){
+  let data; try{ data = await loadNyt(); }catch(e){ return toast('Could not load the archive.'); }
+  const day = data[date];
+  if(!day){ return toast('No NYT puzzle for that date.'); }
+  const body = `NYT Spelling Bee — ${date}\nLetters: ${day.l.toUpperCase()} (center ${day.c.toUpperCase()})\n`+
+    `${day.a.length} words\n\n` + [...day.a].sort().join('\n') + '\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([body], {type:'text/plain'}));
+  a.download = `spelling-bee-${date}.txt`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+(function initNyt(){
+  const inp = $('#nytDate');
+  inp.min = '2023-01-01'; inp.max = todayISO(); inp.value = todayISO();
+  $('#btnNytToday').addEventListener('click', ()=> playNytDay(todayISO()));
+  $('#btnNytPlay').addEventListener('click', ()=> playNytDay(inp.value || todayISO()));
+  $('#btnNytDownload').addEventListener('click', ()=> downloadNytDay(inp.value || todayISO()));
+})();
 
 /* ---------- events ---------- */
 document.addEventListener('keydown', (e)=>{
@@ -1449,7 +1520,7 @@ function renderResume(){
   sec.classList.remove('hidden');
   $('#resumeLastLetters').innerHTML = '▶ ' + letters;
   $('#resumeLastMeta').textContent = (d.room?'👥 ':'') + (d.score||0) + ' pts · ' + (d.found||[]).length + ' words · ' + timeAgo(d.updated||d.startedAt);
-  $('#resumeLast').onclick = ()=> startGame(d.letters, d.center, d.room);
+  $('#resumeLast').onclick = ()=> resumeBoard(d);
 }
 
 // ---- Previous games modal: all games I've played + standings + filters ----
@@ -1527,7 +1598,7 @@ function drawGames(){
     row.className = 'game-row';
     row.innerHTML = `<div class="g-top"><span class="g-letters">${letters}</span>${badge}</div>`+
       `<span class="g-meta">${g.score||0} pts · ${(g.found||[]).length} words · ${timeAgo(g.updated)}</span>`;
-    row.addEventListener('click', ()=>{ $('#gamesModal').close(); startGame(g.letters, g.center, g.room); });
+    row.addEventListener('click', ()=>{ $('#gamesModal').close(); resumeBoard(g); });
     list.appendChild(row);
   });
 }
@@ -1603,7 +1674,7 @@ let joinRoute = null;   // pending invite route while the join dialog is open
     const lastKey = localStorage.getItem('hc_lastActive');
     const last = lastKey && loadProgress(lastKey);
     if(last && last.letters && last.center){
-      startGame(last.letters, last.center, last.room);
+      resumeBoard(last);
     }
   }
 })();
