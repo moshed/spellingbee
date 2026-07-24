@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["VWR39LZW5M.com.DNZ.worldofwords"],
+        "components": [
+          { "/": "/i/*", "comment": "game invites open in World of Words" },
+          { "/": "/i", "comment": "game invites open in World of Words" }
+        ]
+      }
+    ]
+  }
+}

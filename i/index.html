@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>You're invited — World of Words</title>
+<meta name="theme-color" content="#f7da21">
+<meta property="og:title" content="Join my game">
+<meta property="og:description" content="Spelling Bee, Anagrams and Boggle — play in your browser, no sign-up.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23141414'/><polygon points='50,16 78,33 78,67 50,84 22,67 22,33' fill='%23f7da21'/></svg>">
+<style>
+  :root{ --bg:#0f1115; --card:#171a21; --ink:#f4f6fb; --muted:#9aa4b6; --line:#2a2f3a; --accent:#f7da21; }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#fff; --card:#f6f7f9; --ink:#15181f; --muted:#5d6674; --line:#e2e6ec; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  body{min-height:100svh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;padding:28px 20px;text-align:center}
+  h1{font-size:26px;margin:0;font-weight:800}
+  p{color:var(--muted);font-size:14px;margin:0;line-height:1.5;max-width:30rem}
+  .board{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:4px 0}
+  .t{width:44px;height:48px;display:flex;align-items:center;justify-content:center;
+     background:var(--card);border:1px solid var(--line);border-radius:8px;
+     font-weight:800;font-size:20px;text-transform:uppercase}
+  .t.mid{background:var(--accent);color:#141414;border-color:var(--accent)}
+  .code{font-size:34px;font-weight:800;letter-spacing:6px}
+  a.btn{display:block;width:100%;max-width:22rem;text-decoration:none;font-weight:800;font-size:16px;
+    padding:15px 20px;border-radius:999px}
+  a.play{background:var(--accent);color:#141414}
+  a.app{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .muted-sm{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <h1 id="title">You're invited</h1>
+  <div id="preview"></div>
+  <p id="blurb"></p>
+  <a class="btn play" id="play" href="#">Play in the browser</a>
+  <a class="btn app" id="app" href="#">Open in the app</a>
+  <p class="muted-sm">Free, no sign-up. Scores update live for everyone playing.</p>
+
+<script>
+// The same https link serves both audiences: iOS opens the app directly via the
+// universal link when it's installed, and everyone else lands here — a real page
+// with a working "play in the browser" button. Never a dead end.
+const q = new URLSearchParams(location.search);
+const game = q.get('g') || 'bee';
+const room = q.get('r') || '';
+const letters = (q.get('l') || '').toLowerCase();
+const center = (q.get('c') || '').toLowerCase();
+
+const NAMES = { bee:'Spelling Bee', ana:'Anagrams', bog:'Boggle' };
+document.getElementById('title').textContent = 'Join my ' + (NAMES[game] || 'game');
+
+const preview = document.getElementById('preview');
+if (game === 'bee' && letters) {
+  preview.className = 'board';
+  // centre letter first, highlighted — every word must use it
+  const outer = [...letters].filter(c => c !== center);
+  preview.innerHTML = [`<span class="t mid">${center}</span>`]
+    .concat(outer.map(c => `<span class="t">${c}</span>`)).join('');
+} else if (room) {
+  preview.innerHTML = `<div class="code">${room.replace(/[^A-Za-z0-9]/g,'').toUpperCase()}</div>`;
+}
+
+const BLURB = {
+  bee: 'Build as many words as you can from these seven letters — every word has to use the middle one.',
+  ana: 'Flip tiles and claim words before anyone else, then steal theirs by rearranging and extending them.',
+  bog: 'Trace words through the grid before the timer runs out. Words you both find cancel out.',
+};
+document.getElementById('blurb').textContent = BLURB[game] || '';
+
+// Where the browser version lives. Boggle has no web version yet, so that button
+// points at the app instead of promising a page that doesn't exist.
+let webUrl = null;
+if (game === 'bee') {
+  const p = new URLSearchParams();
+  if (letters) p.set('l', letters);
+  if (center) p.set('c', center);
+  if (room) p.set('r', room);
+  webUrl = 'https://spellingbee.dancykier.com/#' + p.toString();
+} else if (game === 'ana') {
+  webUrl = 'https://anagrams.dancykier.com/#r=' + encodeURIComponent(room);
+}
+
+const playBtn = document.getElementById('play');
+if (webUrl) {
+  playBtn.href = webUrl;
+} else {
+  playBtn.textContent = 'Get the app';
+  playBtn.href = 'https://games.dancykier.com';
+}
+
+const appBtn = document.getElementById('app');
+const deep = new URLSearchParams({ g: game, r: room });
+if (letters) deep.set('l', letters);
+if (center) deep.set('c', center);
+appBtn.href = 'worldofwords://join?' + deep.toString();
+</script>
+</body>
+</html>
