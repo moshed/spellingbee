@@ -381,7 +381,7 @@
   <div class="gfilters" id="gamesFilters">
     <div class="gfgroup">
       <span class="gflabel">Type</span>
-      <button data-g="type" data-v="nyt">NYT</button>
+      <button data-g="type" data-v="nyt">Daily</button>
       <button data-g="type" data-v="solo">Solo</button>
       <button data-g="type" data-v="multi">Multiplayer</button>
     </div>
@@ -397,7 +397,7 @@
       <button data-g="stand" data-v="losing">Losing</button>
     </div>
     <div class="gfgroup">
-      <span class="gflabel">Jump to any NYT day</span>
+      <span class="gflabel">Jump to any past day</span>
       <input type="date" id="gnytDate">
       <button id="gnytGo">Play</button>
     </div>
@@ -1379,7 +1379,7 @@ function todayISO(){ return isoDay(0); }
 async function playNytDay(date){
   let data; try{ data = await loadNyt(); }catch(e){ toast('Could not load the puzzle archive.'); return; }
   const day = data[date];
-  if(!day){ toast('No NYT puzzle for that date.'); return; }
+  if(!day){ toast('No puzzle for that date.'); return; }
   const outer = [...day.l].filter(l => l !== day.c);      // center first, then outer letters
   startGame([day.c, ...outer], day.c, null, { valid: new Set(day.a), nytDate: date });
 }
@@ -1634,7 +1634,7 @@ function drawGames(){
     let badge, meta;
     if(g.kind==='nyt'){
       const d = new Date(g.nyt+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
-      badge = `<span class="g-badge nyt">NYT</span>` + (g.played ? `<span class="g-badge win">Played</span>` : `<span class="g-badge solo">New</span>`);
+      badge = `<span class="g-badge nyt">Daily</span>` + (g.played ? `<span class="g-badge win">Played</span>` : `<span class="g-badge solo">New</span>`);
       meta  = g.played ? `${g.score} pts · ${g.foundCount} words · ${d}` : `${d} · ${g.total} words`;
     }else if(g.multi){
       const who = '👥'+(g.players.length);
