@@ -107,15 +107,14 @@
     color:var(--accent); white-space:nowrap; letter-spacing:.3px}
   /* each player = a score bubble with their initial beneath, sitting ABOVE the
      line and connected to its exact spot by a pointer */
-  .pin{position:absolute; top:2px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
-    gap:2px; transition:left .35s ease}
-  .pin .pnum{min-width:26px; height:24px; padding:0 8px; border-radius:999px; border:2px solid var(--bg);
-    background:var(--panel2); color:var(--ink); display:flex; align-items:center; justify-content:center;
-    font-weight:800; font-size:12px; font-variant-numeric:tabular-nums}
+  .pin{position:absolute; top:6px; transform:translateX(-50%); transition:left .35s ease}
+  /* score + initials together in one rounded rectangle */
+  .pin .pnum{display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 9px; border-radius:9px;
+    border:2px solid var(--bg); background:var(--panel2); color:var(--ink); font-weight:800; font-size:12px; white-space:nowrap}
+  .pin .pnum .ps{font-variant-numeric:tabular-nums}
+  .pin .pnum .pn{font-size:10px; font-weight:700; color:var(--muted)}
   .pin.me .pnum{background:var(--accent); color:var(--accent-ink)}
-  .pin .pini{font-size:10px; font-weight:700; color:var(--muted); max-width:70px; line-height:1;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .pin.me .pini{color:var(--ink)}
+  .pin.me .pnum .pn{color:var(--accent-ink); opacity:.75}
   /* the puzzle max — a distinct black bubble at the end of the line */
   .maxpin{position:absolute; top:34px; transform:translateX(-50%); z-index:1}
   .maxpin .mnum{min-width:24px; height:24px; padding:0 7px; border-radius:999px; background:#000; color:#fff;
@@ -975,7 +974,7 @@ function renderBoard(){
   items.forEach(o=>{
     const bx=(o.bx*100).toFixed(2), tx=(o.tx*100).toFixed(2);
     const pl=document.createElementNS(NS,'polyline');
-    pl.setAttribute('points', `${bx},34 ${bx},39 ${tx},42 ${tx},46`);   // down · across · down to the line
+    pl.setAttribute('points', `${bx},30 ${bx},37 ${tx},41 ${tx},46`);   // down · across · down to the line
     pl.setAttribute('fill','none'); pl.setAttribute('stroke','var(--muted)'); pl.setAttribute('stroke-width','1'); pl.setAttribute('vector-effect','non-scaling-stroke');
     svg.appendChild(pl);
   });
@@ -997,8 +996,8 @@ function renderBoard(){
     pin.className = 'pin' + (mine?' me':'');
     pin.style.left = (o.bx*100)+'%';
     pin.style.zIndex = String(2 + i);   // rank order (leader in front) — low so the ⋯ menu covers them
-    const inits = g.ps.map(p => p.id===PLAYER_ID ? 'you' : initials(p.name)).join(' ');
-    pin.innerHTML = `<span class="pnum">${g.score}</span><span class="pini">${escapeHtml(inits)}</span>`;
+    const inits = g.ps.map(p => initials(p.name)).join(' ');   // your own initials too, not "you"
+    pin.innerHTML = `<span class="pnum"><span class="ps">${g.score}</span><span class="pn">${escapeHtml(inits)}</span></span>`;
     pin.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`).join('\n');
     track.appendChild(pin);
   });
