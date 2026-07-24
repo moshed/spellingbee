@@ -1680,21 +1680,39 @@ async function nytRecent(N){
 async function buildGames(){
   const mine = await fetchAllMyGames();
   const nyt  = await nytRecent(45);
-  const keyOf = d => d.room || ([...d.letters].sort().join('')+'.'+d.center);
+  // Key by the PUZZLE (sorted letters + center), NOT by room. The same board
+  // played in two rooms — or a daily that was also played through a shared room —
+  // is ONE puzzle and must collapse to a single row instead of appearing 2-3 times.
+  const sigOf = d => [...d.letters].sort().join('') + '.' + d.center;
   const map = new Map();
-  nyt.forEach(e => map.set('nyt.'+e.nyt, e));
-  mine.forEach(g=>{
-    if(g.nyt){                                     // a NYT day you played — fold into its entry
-      const k = 'nyt.'+g.nyt, cur = map.get(k) || {kind:'nyt', nyt:g.nyt, letters:g.letters, center:g.center, total:0};
-      map.set(k, {...cur, played:true, score:g.score||0, foundCount:(g.found||[]).length, updated:g.updated||0});
-    }else{
-      map.set(keyOf(g), {kind:g.multi?'multi':'solo', letters:g.letters, center:g.center, room:g.room,
-        played:true, score:g.score||0, foundCount:(g.found||[]).length, updated:g.updated||0,
-        multi:g.multi, winning:g.winning, close:g.close, losing:g.losing, players:g.players||[]});
-    }
-  });
+  const put = e => { const k = sigOf(e); map.set(k, map.has(k) ? mergeGames(map.get(k), e) : e); };
+  nyt.forEach(e => put({kind:'nyt', nyt:e.nyt, letters:e.letters, center:e.center, total:e.total,
+                        played:e.played, score:e.score, foundCount:e.foundCount, updated:e.updated, players:[]}));
+  mine.forEach(g => put({kind:g.multi?'multi':'solo', letters:g.letters, center:g.center, room:g.room,
+                         played:true, score:g.score||0, foundCount:(g.found||[]).length, updated:g.updated||0,
+                         multi:g.multi, winning:g.winning, close:g.close, losing:g.losing, players:g.players||[]}));
   const sortKey = g => g.updated || (g.nyt ? Date.parse(g.nyt+'T12:00:00') : 0);
   return [...map.values()].sort((a,b)=> sortKey(b) - sortKey(a));
+}
+// Two views of the SAME board (the daily entry, plus each room it was played in).
+// Keep the daily identity, the furthest-along progress, and whichever copy
+// actually has other players in it — so a stray solo room can't mask a group game.
+function mergeGames(a, b){
+  const daily = a.nyt ? a : (b.nyt ? b : null);
+  const rich  = (b.players||[]).length >= (a.players||[]).length ? b : a;
+  return {
+    kind:  daily ? 'nyt' : rich.kind,
+    nyt:   daily ? daily.nyt : null,
+    total: daily ? daily.total : 0,
+    letters: a.letters, center: a.center,
+    room: rich.room || a.room || b.room,
+    played: !!(a.played || b.played),
+    score:      Math.max(a.score||0, b.score||0),
+    foundCount: Math.max(a.foundCount||0, b.foundCount||0),
+    updated:    Math.max(a.updated||0, b.updated||0),
+    multi: rich.multi, winning: rich.winning, close: rich.close, losing: rich.losing,
+    players: rich.players||[]
+  };
 }
 function drawGames(){
   const list = $('#gamesList');
@@ -1702,10 +1720,14 @@ function drawGames(){
   const status = $$('#gamesFilters button[data-g="status"].active').map(b=>b.dataset.v);
   const stands = $$('#gamesFilters button[data-g="stand"].active').map(b=>b.dataset.v);
   const games = _allGames.filter(g=>{
-    if(types.length && !types.includes(g.kind)) return false;
+    // a merged row can be BOTH a daily and a multiplayer game — match either facet
+    if(types.length){
+      const isType = t => t==='nyt' ? !!g.nyt : t==='multi' ? !!g.multi : (!g.nyt && !g.multi);
+      if(!types.some(isType)) return false;
+    }
     if(status.length && !status.includes(g.played ? 'played' : 'unplayed')) return false;
     if(stands.length){                                  // standing only applies to multiplayer games
-      if(g.kind!=='multi') return false;
+      if(!g.multi) return false;
       if(!((g.winning&&stands.includes('winning'))||(g.close&&stands.includes('close'))||(g.losing&&stands.includes('losing')))) return false;
     }
     return true;
@@ -1715,21 +1737,23 @@ function drawGames(){
   games.forEach(g=>{
     const letters = (g.letters||[]).map(l => l===g.center
       ? `<b style="color:var(--accent)">${escapeHtml(l)}</b>` : escapeHtml(l)).join(' ');
-    let badge, meta;
-    if(g.kind==='nyt'){
-      const d = new Date(g.nyt+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
-      badge = `<span class="g-badge nyt">Daily</span>` + (g.played ? `<span class="g-badge win">Played</span>` : `<span class="g-badge solo">New</span>`);
-      meta  = g.played ? `${g.score} pts · ${g.foundCount} words · ${d}` : `${d} · ${g.total} words`;
-    }else if(g.multi){
+    const dstr = g.nyt ? new Date(g.nyt+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '';
+    const badges = [];
+    if(g.nyt) badges.push(`<span class="g-badge nyt">Daily</span>`);
+    if(g.multi){
       const who = '👥'+(g.players.length);
-      badge = g.close ? `<span class="g-badge close">Close · ${who}</span>`
-            : g.winning ? `<span class="g-badge win">Winning · ${who}</span>`
-            : `<span class="g-badge lose">Behind · ${who}</span>`;
-      meta  = `${g.score} pts · ${g.foundCount} words · ${timeAgo(g.updated)}`;
+      badges.push(g.close ? `<span class="g-badge close">Close · ${who}</span>`
+                : g.winning ? `<span class="g-badge win">Winning · ${who}</span>`
+                : `<span class="g-badge lose">Behind · ${who}</span>`);
+    }else if(g.played){
+      badges.push(g.nyt ? `<span class="g-badge win">Played</span>` : `<span class="g-badge solo">Solo</span>`);
     }else{
-      badge = `<span class="g-badge solo">Solo</span>`;
-      meta  = `${g.score} pts · ${g.foundCount} words · ${timeAgo(g.updated)}`;
+      badges.push(`<span class="g-badge solo">New</span>`);
     }
+    const badge = badges.join('');
+    const meta = (!g.played && g.nyt)
+      ? `${dstr} · ${g.total} words`
+      : `${g.score} pts · ${g.foundCount} words · ${timeAgo(g.updated)}` + (dstr ? ` · ${dstr}` : '');
     const row = document.createElement('button');
     row.className = 'game-row';
     row.innerHTML = `<div class="g-top"><span class="g-letters">${letters}</span>${badge}</div><span class="g-meta">${meta}</span>`;
