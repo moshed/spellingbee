@@ -200,6 +200,7 @@
   .board .who{flex:1; min-width:0}
   .board .who b{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .board .who small{color:var(--muted); font-size:12px}
+  .board .diff{color:var(--accent); font-weight:700}
   .board .pts{font-weight:800; font-size:18px; text-align:right}
   .board .me{color:var(--accent)}
   .dotlive{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(63,185,80,.6);animation:pulse 1.6s infinite}
@@ -744,6 +745,21 @@ const Net = {
   // `candidate` (a room from an invite link or saved state). We pick the one with
   // the MOST distinct players, so a device sitting in a stale solo room rejoins
   // the shared/group game. Ties go to the explicit candidate. Null = no idea.
+  // How many words do I have that each opponent doesn't (and vice versa)? The
+  // comparison runs inside Postgres (hive_word_diffs, security definer) and returns
+  // ONLY counts — we deliberately never pull other players' `found` arrays into the
+  // page, or the answers would be readable from devtools.
+  async diffs(){
+    if(!this.configured() || !this.room) return null;
+    try{
+      const sb = await this.client();
+      const { data, error } = await sb.rpc('hive_word_diffs', { p_room:this.room, p_me:PLAYER_ID });
+      if(error || !data) return null;
+      const out = {};
+      data.forEach(r => { out[r.player_id] = { ahead:r.ahead||0, behind:r.behind||0 }; });
+      return out;
+    }catch(e){ return null; }
+  },
   async findMyRoom(candidate){
     if(!this.configured()) return candidate || null;
     try{
@@ -1069,14 +1085,24 @@ function renderBoard(){
   if(entries.length === 0){
     rows.innerHTML = '<div class="muted" style="padding:8px 4px">Just you so far. Share the link to invite players.</div>';
   }
+  // Competition ranking: equal scores share a rank and are marked "T" (T1, T1, 3…)
+  // — the rank after a tie skips, so positions still reflect how many are ahead.
+  const ranks = entries.map((p,i)=> i>0 && (p.score||0)===(entries[i-1].score||0) ? null : i+1);
+  for(let i=1;i<ranks.length;i++) if(ranks[i]===null) ranks[i] = ranks[i-1];
+  const rankCount = {};
+  ranks.forEach(r => rankCount[r] = (rankCount[r]||0)+1);
+
   entries.forEach((p,i)=>{
     const row = document.createElement('div'); row.className='row';
     const mine = p.id === PLAYER_ID;
-    const medal = ['🥇','🥈','🥉'][i] || (i+1)+'.';
+    const place = (rankCount[ranks[i]] > 1 ? 'T' : '') + ranks[i];
+    // diff vs me — computed server-side, we only ever receive counts (never words)
+    const d = mine ? null : (G.diffs||{})[p.id];
+    const diffTxt = d ? ` · <span class="diff">${d.ahead} they don't have</span>` : '';
     row.innerHTML =
-      `<span style="width:22px;text-align:center">${medal}</span>`+
+      `<span style="width:30px;text-align:center;font-weight:700;color:var(--muted)">${place}</span>`+
       `<div class="who"><b class="${mine?'me':''}">${escapeHtml(p.name||'Player')}${mine?' (you)':''}</b>`+
-      `<small>${p.words||0} words · ${timeAgo(p.updated)}</small></div>`+
+      `<small>${p.words||0} words · ${timeAgo(p.updated)}${diffTxt}</small></div>`+
       `<span class="pts ${mine?'me':''}">${p.score||0}</span>`;
     rows.appendChild(row);
   });
@@ -1250,7 +1276,7 @@ async function startGame(letters, center, roomId, opts={}){
     G.found = []; G.score = 0; G.startedAt = now();
   }
   if(G.name) localStorage.setItem('hc_name', G.name);
-  G.players = {};                       // clear the previous game's scoreboard when switching games
+  G.players = {}; G.diffs = {};         // clear the previous game's scoreboard when switching games
   G.players[PLAYER_ID] = myEntry();
 
   // remember this as the active game so a refresh (even one that lost the URL
@@ -1559,7 +1585,13 @@ $('#renameSave').addEventListener('click', ()=>{
 });
 
 /* score-strip chip -> full standings sheet */
-function openBoard(){ renderBoard(); renderNetNote(); $('#boardSheet').classList.remove('hidden'); }
+function openBoard(){
+  renderBoard(); renderNetNote(); $('#boardSheet').classList.remove('hidden');
+  // Word diffs are computed in the DATABASE and come back as counts only — the
+  // other players' word lists are never sent to this page, so they can't be read
+  // out of devtools to cheat.
+  Net.diffs().then(d => { if(d){ G.diffs = d; renderBoard(); } });
+}
 function closeBoard(){ $('#boardSheet').classList.add('hidden'); }
 $('#leaderboard').addEventListener('click', openBoard);
 $('#boardClose').addEventListener('click', closeBoard);
