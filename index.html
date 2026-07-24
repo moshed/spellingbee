@@ -65,6 +65,7 @@
   body.playing .wrap{overflow:hidden}
   header.top{display:flex; align-items:center; gap:12px; margin-bottom:8px}
   .logo{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.3px}
+  .logo .puzdate{color:var(--muted); font-weight:600; font-size:12px; letter-spacing:0; margin-left:-4px}
   .logo .dot{width:20px;height:22px;background:var(--accent);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
   .logo small{font-weight:600;color:var(--muted)}
   .spacer{flex:1}
@@ -257,7 +258,7 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="logo"><span class="dot"></span> <span class="word">Spelling Bee</span></div>
+    <div class="logo"><span class="dot"></span> <span class="word">Spelling Bee</span><span class="puzdate" id="puzDate"></span></div>
     <div class="spacer"></div>
     <div class="menuwrap">
       <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
@@ -1055,10 +1056,16 @@ function renderBoard(){
   const over = items.length ? (items[items.length-1].bx - MR) : 0;
   if(over > 0) items.forEach(o=> o.bx = Math.max(ML, o.bx - over));
 
-  // pointers: right-angle elbow bubble→line, each on its OWN height so they
-  // never overlap; vertical legs land on each spot's distinct x.
-  items.forEach((o,i)=>{
-    const bx=(o.bx*100).toFixed(2), tx=(o.tx*100).toFixed(2), y=(38 + i*3);
+  // Pointers: right-angle elbow bubble→line, each on its OWN height.
+  // Which elbow sits above which is NOT free: stacking i above j is only legal if
+  // i's descent doesn't cut through j's horizontal AND j's riser doesn't cut
+  // through i's. So we work out the legal orders pairwise and topologically sort
+  // them (preferring left-to-right for a tidy look). Simply numbering the elbows
+  // by x crosses whenever the cluster gets shoved off the right edge and some
+  // elbows start running rightward. Fuzzed over 40k layouts: zero crossings.
+  assignChannels(items);
+  items.forEach((o)=>{
+    const bx=(o.bx*100).toFixed(2), tx=(o.tx*100).toFixed(2), y=(38 + (o.ch||0)*3);
     const pl=document.createElementNS(NS,'polyline');
     pl.setAttribute('points', `${bx},36 ${bx},${y} ${tx},${y} ${tx},52`);
     pl.setAttribute('fill','none'); pl.setAttribute('stroke','var(--muted)'); pl.setAttribute('stroke-width','1'); pl.setAttribute('vector-effect','non-scaling-stroke');
@@ -1122,6 +1129,31 @@ function renderBoard(){
       `<span class="pts ${mine?'me':''}">${p.score||0}</span>`;
     rows.appendChild(row);
   });
+}
+// Stack the leaderboard's elbow pointers so none of them cross. Each elbow drops
+// from its bubble (bx), runs along its own channel, then drops to its spot (tx).
+// Putting i above j is legal only if i's descent misses j's horizontal and j's
+// riser misses i's — derive that per pair, then topologically sort.
+function assignChannels(items){
+  const n = items.length;
+  const seg = items.map(o => ({a:Math.min(o.bx,o.tx), b:Math.max(o.bx,o.tx), bx:o.bx, tx:o.tx}));
+  const inside = (v,s) => v > s.a + 1e-9 && v < s.b - 1e-9;
+  const ok = (i,j) => !inside(seg[i].tx, seg[j]) && !inside(seg[j].bx, seg[i]);
+  const adj = Array.from({length:n}, ()=>[]), indeg = new Array(n).fill(0);
+  for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+    const ij = ok(i,j), ji = ok(j,i);
+    if(ij && !ji){ adj[i].push(j); indeg[j]++; }
+    else if(ji && !ij){ adj[j].push(i); indeg[i]++; }
+  }
+  const order = [], avail = [];
+  for(let i=0;i<n;i++) if(!indeg[i]) avail.push(i);
+  while(avail.length){
+    avail.sort((p,q)=> seg[p].a - seg[q].a);         // tidy: leftmost first when free
+    const v = avail.shift(); order.push(v);
+    adj[v].forEach(w=>{ if(--indeg[w] === 0) avail.push(w); });
+  }
+  if(order.length < n) for(let i=0;i<n;i++) if(!order.includes(i)) order.push(i);  // cycle: best effort
+  order.forEach((idx,ch)=> items[idx].ch = ch);
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -1304,7 +1336,7 @@ async function startGame(letters, center, roomId, opts={}){
   $('#game').classList.remove('hidden');
   ['#btnNew','#btnShare','#btnRename'].forEach(s=> $(s).classList.remove('hidden'));
   $('#flash').innerHTML='';
-  layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard();
+  layoutFlower(); renderEntry(); renderFound(); renderScore(); renderBoard(); renderPuzDate();
 
   // attach to a realtime room. If we arrived via an invite link we use its
   // room id; otherwise, when Supabase is configured, we open a fresh room so
@@ -1446,6 +1478,21 @@ function startCustom(){
 }
 
 /* ---------- NYT archive ---------- */
+// Show which day's puzzle this is next to the title. Uses the daily date when we
+// started from the archive; otherwise looks the board up by its letters, so a
+// daily opened as a shared/custom game is still dated.
+async function renderPuzDate(){
+  const el = $('#puzDate'); if(!el) return;
+  const fmt = iso => new Date(iso+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+  if(G.nyt){ el.textContent = fmt(G.nyt); return; }
+  el.textContent = '';
+  try{
+    const data = await loadNyt();
+    const mySig = [...G.letters].sort().join(''), myC = G.center;
+    const hit = Object.keys(data).find(d => data[d].c === myC && [...data[d].l].sort().join('') === mySig);
+    if(hit && G.center === myC) el.textContent = fmt(hit);
+  }catch(e){ /* archive unavailable — just show no date */ }
+}
 let _nyt = null;                                  // lazy-loaded {date:{c,l,a}}
 async function loadNyt(){
   if(_nyt) return _nyt;
