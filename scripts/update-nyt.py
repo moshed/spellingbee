@@ -42,11 +42,17 @@ def main():
     words |= {w for w in answers if w.isalpha() and len(w) >= 4}
     # PRUNE (safe): a NYT day publishes the COMPLETE valid list, so a word buildable
     # from that day's letters but absent from its answers is one NYT rejects — drop it.
-    # But never drop a common word (common-words.json) or any word NYT ever accepted,
-    # so an occasional incomplete source day can't delete a good word. Only the recent
-    # window is re-checked each run (older days handled on the day they first landed).
-    common = set(json.load(open('common-words.json'))) if os.path.exists('common-words.json') else set()
-    protected = common | {a for a in answers}
+    # Never drop a word NYT has EVER accepted, so an occasional incomplete source
+    # day can't delete a good word. Only the recent window is re-checked each run
+    # (older days are handled on the day they first landed).
+    #
+    # NB: this used to also protect everything in common-words.json. That list is
+    # a 46k alphabetical word list, not a frequency ranking, and it shelters
+    # proper nouns and obscure junk (amazonian, moai, noni, lido, dido, wank...),
+    # which inflated a board's maximum and therefore its Genius target above NYT's.
+    # Every word the protection was added for (yard, data, tidy, defund, unfound,
+    # confound, dart, uncuffed) is in NYT's own answers, so it's fully covered.
+    protected = set(answers)
     recent = sorted(bee.keys())[-30:]
     remove = set()
     for date in recent:
