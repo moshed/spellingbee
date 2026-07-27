@@ -264,6 +264,7 @@
       <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu hidden" id="menu">
         <button id="btnShare" class="hidden">Invite / copy link</button>
+        <button id="btnPrint">Print / save PDF</button>
         <button id="btnRename" class="hidden">Change name</button>
         <button id="btnGames">Previous puzzles</button>
         <button id="btnMyId">My player ID</button>
@@ -1580,7 +1581,132 @@ $('#btnMenu').addEventListener('click', (e)=>{
 document.addEventListener('click', (e)=>{
   if(!$('#menu').classList.contains('hidden') && !e.target.closest('.menuwrap')) closeMenu();
 });
+
+/* ============================================================
+   Printable puzzle sheet
+   ------------------------------------------------------------
+   The grid alone isn't playable away from a screen — you need to know how many
+   words there are and how long each one is. So the sheet prints the flower plus
+   a blank for every valid word: first letter shown, one underline per remaining
+   letter, grouped by starting letter and sorted by length. That tells you which
+   slot is which without giving the answers away.
+
+   Rendered into a hidden iframe rather than a popup: window.open is blocked by
+   default in enough browsers to make it unreliable, and the print dialog's
+   "Save as PDF" covers the PDF case with no extra code.
+   ============================================================ */
+function hexSVG(letters, center){
+  const W = 66, H = W * Math.sqrt(3) / 2, S = 1.04;
+  const dx = 0.75 * W * S, dyD = 0.5 * H * S, dyT = H * S;
+  const pos = [[0,0],[0,-dyT],[dx,-dyD],[dx,dyD],[0,dyT],[-dx,dyD],[-dx,-dyD]];
+  const outer = letters.filter(l => l !== center);
+  const cells = [center, ...outer];
+  // same polygon as the on-screen .hex clip-path, in SVG units
+  const poly = (cx, cy) => [[-.25,-.5],[.25,-.5],[.5,0],[.25,.5],[-.25,.5],[-.5,0]]
+    .map(([px,py]) => `${(cx + px*W).toFixed(1)},${(cy + py*H).toFixed(1)}`).join(' ');
+  const parts = cells.map((ch,i)=>{
+    const [x,y] = pos[i], mid = i === 0;
+    return `<polygon points="${poly(x,y)}" fill="${mid ? '#f7da21' : '#e6e6e6'}" stroke="#fff" stroke-width="2"/>`
+         + `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central"
+                 font-size="26" font-weight="800" fill="#111">${ch.toUpperCase()}</text>`;
+  }).join('');
+  return `<svg viewBox="-150 -120 300 240" width="230" height="184"
+               style="print-color-adjust:exact;-webkit-print-color-adjust:exact">${parts}</svg>`;
+}
+
+function printableSheet(){
+  const letters = G.letters, center = G.center;
+  const words = [...G.valid].sort();
+  const isPan = w => new Set(w).size === 7 && letters.every(l => w.includes(l));
+
+  // group by first letter, then by length — the two things that tell blanks apart
+  const groups = {};
+  for(const w of words){
+    (groups[w[0]] = groups[w[0]] || []).push(w);
+  }
+  const blocks = Object.keys(groups).sort().map(ltr=>{
+    const ws = groups[ltr].sort((a,b)=> a.length - b.length || a.localeCompare(b));
+    const rows = ws.map(w=>{
+      // no length number — counting the blanks IS the length, and a number
+      // pushed to the column edge collided with the longer words
+      const dashes = '_ '.repeat(w.length - 1).trim();
+      return `<div class="slot${isPan(w) ? ' pan' : ''}">`
+           + `<span class="lead">${w[0].toUpperCase()}</span> ${dashes}</div>`;
+    }).join('');
+    return `<section class="grp"><h3>${ltr.toUpperCase()} <span>${ws.length}</span></h3>${rows}</section>`;
+  }).join('');
+
+  // A row is "X _ _ _ …" — 2 chars per letter bar the first. Monospace glyphs
+  // run about 0.6em wide, so size the type from the puzzle's longest word and
+  // every row fits its column. Guessing a fixed size bled 15-letter words
+  // (nationalization) into the next column.
+  const longest = words.reduce((m,w)=> Math.max(m, w.length), 4);
+  const slotPx = Math.max(7, Math.min(10.5, 150 / ((2 * longest - 1) * 0.6))).toFixed(2);
+
+  const pangrams = words.filter(isPan).length;
+  const date = ($('#puzDate') && $('#puzDate').textContent.trim()) || '';
+  const total = maxScoreOf(G.valid, letters);
+
+  return `<!doctype html><meta charset="utf-8"><title>Spelling Bee puzzle sheet</title>
+  <style>
+    @page{margin:14mm}
+    *{box-sizing:border-box}
+    body{font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         color:#111; margin:0}
+    header{display:flex; gap:22px; align-items:center; border-bottom:2px solid #111;
+           padding-bottom:12px; margin-bottom:14px}
+    h1{font-size:20px; margin:0 0 4px}
+    .meta{color:#555; font-size:12px; margin:0}
+    .meta b{color:#111}
+    .rules{margin:6px 0 0; color:#555; font-size:11px}
+    .cols{column-count:4; column-gap:16px}
+    @media print{ .cols{column-count:4} }
+    .grp{break-inside:avoid; margin:0 0 12px}
+    h3{margin:0 0 4px; font-size:12px; letter-spacing:.08em; border-bottom:1px solid #bbb;
+       padding-bottom:2px}
+    h3 span{color:#888; font-weight:600}
+    /* sized so the longest possible entry (a 12-letter pangram = lead letter
+       plus 11 blanks) still fits one column without bleeding into the next */
+    .slot{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:${slotPx}px;
+          letter-spacing:0; white-space:nowrap; padding:2px 0}
+    .lead{font-weight:800}
+    /* a pangram uses all seven letters — worth flagging, it's the big score */
+    .slot.pan .lead{color:#111; background:#f7da21; padding:0 3px; border-radius:2px;
+                    print-color-adjust:exact; -webkit-print-color-adjust:exact}
+  </style>
+  <header>
+    ${hexSVG(letters, center)}
+    <div>
+      <h1>Spelling Bee${date ? ' &middot; ' + date : ''}</h1>
+      <p class="meta"><b>${words.length}</b> words &middot; <b>${pangrams}</b> pangram${pangrams===1?'':'s'}
+         &middot; <b>${total}</b> points for all of them</p>
+      <p class="rules">Every word uses the yellow centre letter and is at least 4 letters.
+         Each blank below is one word — the first letter is given, one underline per
+         remaining letter. Highlighted first letters start a pangram.</p>
+    </div>
+  </header>
+  <div class="cols">${blocks}</div>`;
+}
+
+function doPrint(){
+  if(!G.valid || !G.valid.size){ toast('Puzzle is still loading'); return; }
+  const old = document.getElementById('printFrame');
+  if(old) old.remove();
+  const f = document.createElement('iframe');
+  f.id = 'printFrame';
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f);
+  const d = f.contentDocument;
+  d.open(); d.write(printableSheet()); d.close();
+  // let the SVG and fonts settle before the dialog snapshots the page
+  const go = ()=>{ f.contentWindow.focus(); f.contentWindow.print(); };
+  if(d.readyState === 'complete') setTimeout(go, 120);
+  else f.onload = ()=> setTimeout(go, 120);
+}
+
 $('#btnShare').addEventListener('click', ()=>{ closeMenu(); onShare(); });
+$('#btnPrint').addEventListener('click', ()=>{ closeMenu(); doPrint(); });
 $('#btnShareSheet').addEventListener('click', onShare);
 $('#btnHelp').addEventListener('click', ()=>{ closeMenu(); $('#help').showModal(); });
 $('#btnNew').addEventListener('click', async ()=>{
