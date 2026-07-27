@@ -1596,7 +1596,7 @@ document.addEventListener('click', (e)=>{
    "Save as PDF" covers the PDF case with no extra code.
    ============================================================ */
 function hexSVG(letters, center){
-  const W = 66, H = W * Math.sqrt(3) / 2, S = 1.04;
+  const W = 150, H = W * Math.sqrt(3) / 2, S = 1.04;
   const dx = 0.75 * W * S, dyD = 0.5 * H * S, dyT = H * S;
   const pos = [[0,0],[0,-dyT],[dx,-dyD],[dx,dyD],[0,dyT],[-dx,dyD],[-dx,-dyD]];
   const outer = letters.filter(l => l !== center);
@@ -1608,84 +1608,69 @@ function hexSVG(letters, center){
     const [x,y] = pos[i], mid = i === 0;
     return `<polygon points="${poly(x,y)}" fill="${mid ? '#f7da21' : '#e6e6e6'}" stroke="#fff" stroke-width="2"/>`
          + `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central"
-                 font-size="26" font-weight="800" fill="#111">${ch.toUpperCase()}</text>`;
+                 font-size="58" font-weight="800" fill="#111">${ch.toUpperCase()}</text>`;
   }).join('');
-  return `<svg viewBox="-150 -120 300 240" width="230" height="184"
+  return `<svg viewBox="-330 -270 660 540" width="440" height="360"
                style="print-color-adjust:exact;-webkit-print-color-adjust:exact">${parts}</svg>`;
 }
 
 function printableSheet(){
   const letters = G.letters, center = G.center;
-  const words = [...G.valid].sort();
-  const isPan = w => new Set(w).size === 7 && letters.every(l => w.includes(l));
+  const words = [...G.valid];
 
-  // group by first letter, then by length — the two things that tell blanks apart
-  const groups = {};
-  for(const w of words){
-    (groups[w[0]] = groups[w[0]] || []).push(w);
-  }
-  const blocks = Object.keys(groups).sort().map(ltr=>{
-    const ws = groups[ltr].sort((a,b)=> a.length - b.length || a.localeCompare(b));
-    const rows = ws.map(w=>{
-      // no length number — counting the blanks IS the length, and a number
-      // pushed to the column edge collided with the longer words
-      const dashes = '_ '.repeat(w.length - 1).trim();
-      return `<div class="slot${isPan(w) ? ' pan' : ''}">`
-           + `<span class="lead">${w[0].toUpperCase()}</span> ${dashes}</div>`;
-    }).join('');
-    return `<section class="grp"><h3>${ltr.toUpperCase()} <span>${ws.length}</span></h3>${rows}</section>`;
-  }).join('');
+  // No first letters and no grouping by letter: showing them hands over most of
+  // the puzzle, and the pangram highlight gave away the best word on the board.
+  // A row is bare underlines. Word length is the only clue that stays, since
+  // you can count the blanks anyway.
+  const byLen = words.map(w => w.length).sort((a,b)=> a-b);
+  const longest = byLen[byLen.length-1] || 4;
+  const rows = byLen.map(n =>
+    `<div class="slot">${'_ '.repeat(n).trim()}<span class="n">${n}</span></div>`).join('');
 
-  // A row is "X _ _ _ …" — 2 chars per letter bar the first. Monospace glyphs
-  // run about 0.6em wide, so size the type from the puzzle's longest word and
-  // every row fits its column. Guessing a fixed size bled 15-letter words
-  // (nationalization) into the next column.
-  const longest = words.reduce((m,w)=> Math.max(m, w.length), 4);
-  const slotPx = Math.max(7, Math.min(10.5, 150 / ((2 * longest - 1) * 0.6))).toFixed(2);
+  // Size the type so the longest word still fits its column. A row is 2 chars
+  // per letter and monospace glyphs run about 0.6em. The column width has to be
+  // derived, not guessed — assuming 150px when the real column was 105px ran the
+  // longest rows off the right edge of the page.
+  const GAP = 14, NUMW = 22;                       // gap between columns; width of the count
+  const pageW = 703;                               // A4 less 12mm margins, at 96dpi
+  const widthAt = c => (pageW - (c - 1) * GAP) / c;
+  const sizeAt  = c => (widthAt(c) - NUMW) / ((2 * longest) * 0.6);
+  // As many columns as fit while the type stays readable. Fixing the count at 5
+  // clipped 15-letter rows, because no font size small enough to fit was still
+  // legible — that board needs 3 wide columns, not 5 narrow ones.
+  let COLS = 3;
+  for(let c = 6; c >= 3; c--){ if(sizeAt(c) >= 8){ COLS = c; break; } }
+  const slotPx = Math.max(7, Math.min(12, sizeAt(COLS))).toFixed(2);
 
-  const pangrams = words.filter(isPan).length;
   const date = ($('#puzDate') && $('#puzDate').textContent.trim()) || '';
   const total = maxScoreOf(G.valid, letters);
 
   return `<!doctype html><meta charset="utf-8"><title>Spelling Bee puzzle sheet</title>
   <style>
-    @page{margin:14mm}
+    @page{margin:12mm}
     *{box-sizing:border-box}
     body{font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
          color:#111; margin:0}
-    header{display:flex; gap:22px; align-items:center; border-bottom:2px solid #111;
-           padding-bottom:12px; margin-bottom:14px}
-    h1{font-size:20px; margin:0 0 4px}
-    .meta{color:#555; font-size:12px; margin:0}
+    /* the grid gets the top half of the page — it's the puzzle, the blanks are
+       just the answer space */
+    .top{height:130mm; display:flex; flex-direction:column; align-items:center;
+         justify-content:center; gap:10px; border-bottom:2px solid #111}
+    h1{font-size:17px; margin:0; font-weight:800}
+    .meta{color:#666; font-size:11px; margin:0}
     .meta b{color:#111}
-    .rules{margin:6px 0 0; color:#555; font-size:11px}
-    .cols{column-count:4; column-gap:16px}
-    @media print{ .cols{column-count:4} }
-    .grp{break-inside:avoid; margin:0 0 12px}
-    h3{margin:0 0 4px; font-size:12px; letter-spacing:.08em; border-bottom:1px solid #bbb;
-       padding-bottom:2px}
-    h3 span{color:#888; font-weight:600}
-    /* sized so the longest possible entry (a 12-letter pangram = lead letter
-       plus 11 blanks) still fits one column without bleeding into the next */
-    .slot{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:${slotPx}px;
-          letter-spacing:0; white-space:nowrap; padding:2px 0}
-    .lead{font-weight:800}
-    /* a pangram uses all seven letters — worth flagging, it's the big score */
-    .slot.pan .lead{color:#111; background:#f7da21; padding:0 3px; border-radius:2px;
-                    print-color-adjust:exact; -webkit-print-color-adjust:exact}
+    .cols{column-count:${COLS}; column-gap:${GAP}px; padding-top:12px}
+    .slot{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:${slotPx}px; white-space:nowrap; padding:3px 0;
+          display:flex; align-items:baseline}
+    .n{margin-left:6px; font-size:9px; color:#999; font-family:inherit}
   </style>
-  <header>
+  <div class="top">
+    <h1>Spelling Bee${date ? ' &middot; ' + date : ''}</h1>
     ${hexSVG(letters, center)}
-    <div>
-      <h1>Spelling Bee${date ? ' &middot; ' + date : ''}</h1>
-      <p class="meta"><b>${words.length}</b> words &middot; <b>${pangrams}</b> pangram${pangrams===1?'':'s'}
-         &middot; <b>${total}</b> points for all of them</p>
-      <p class="rules">Every word uses the yellow centre letter and is at least 4 letters.
-         Each blank below is one word — the first letter is given, one underline per
-         remaining letter. Highlighted first letters start a pangram.</p>
-    </div>
-  </header>
-  <div class="cols">${blocks}</div>`;
+    <p class="meta"><b>${words.length}</b> words &middot; <b>${total}</b> points for all of them
+       &middot; every word uses the centre letter, 4 letters or more</p>
+  </div>
+  <div class="cols">${rows}</div>`;
 }
 
 function doPrint(){
