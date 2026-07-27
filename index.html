@@ -1618,51 +1618,48 @@ function printableSheet(){
   const letters = G.letters, center = G.center;
   const words = [...G.valid];
 
-  // No first letters and no grouping by letter: showing them hands over most of
-  // the puzzle, and the pangram highlight gave away the best word on the board.
-  // A row is bare underlines. Word length is the only clue that stays, since
-  // you can count the blanks anyway.
-  const byLen = words.map(w => w.length).sort((a,b)=> a-b);
-  const longest = byLen[byLen.length-1] || 4;
-  const rows = byLen.map(n =>
-    `<div class="slot">${'_ '.repeat(n).trim()}<span class="n">${n}</span></div>`).join('');
+  // Grouped by length with a header per block: the per-row letter count was
+  // redundant (you can count the blanks) and the grouping says the same thing
+  // more tidily. Still no first letters and no pangram marks — those gave the
+  // puzzle away.
+  const byLen = {};
+  for(const w of words) byLen[w.length] = (byLen[w.length] || 0) + 1;
+  const lens = Object.keys(byLen).map(Number).sort((a,b)=> a-b);
 
-  // Size the type so the longest word still fits its column. A row is 2 chars
-  // per letter and monospace glyphs run about 0.6em. The column width has to be
-  // derived, not guessed — assuming 150px when the real column was 105px ran the
-  // longest rows off the right edge of the page.
-  const GAP = 14, NUMW = 22;                       // gap between columns; width of the count
-  const pageW = 703;                               // A4 less 12mm margins, at 96dpi
-  const widthAt = c => (pageW - (c - 1) * GAP) / c;
-  const sizeAt  = c => (widthAt(c) - NUMW) / ((2 * longest) * 0.6);
-  // As many columns as fit while the type stays readable. Fixing the count at 5
-  // clipped 15-letter rows, because no font size small enough to fit was still
-  // legible — that board needs 3 wide columns, not 5 narrow ones.
-  let COLS = 3;
-  for(let c = 6; c >= 3; c--){ if(sizeAt(c) >= 8){ COLS = c; break; } }
-  const slotPx = Math.max(7, Math.min(12, sizeAt(COLS))).toFixed(2);
+  const blocks = lens.map(n => {
+    const rows = Array.from({length: byLen[n]},
+      ()=> `<div class="slot">${'_ '.repeat(n).trim()}</div>`).join('');
+    return `<section class="grp"><h3>${n} letters <span>${byLen[n]}</span></h3>${rows}</section>`;
+  }).join('');
 
   const date = ($('#puzDate') && $('#puzDate').textContent.trim()) || '';
   const total = maxScoreOf(G.valid, letters);
 
+  // Columns and type size are driven by CSS variables so doPrint can measure the
+  // laid-out result and shrink until it fits one page. Estimating row heights
+  // instead got it wrong: group blocks carry margins and `break-inside:avoid`
+  // pushes whole blocks between columns, so the real height isn't rows x height.
   return `<!doctype html><meta charset="utf-8"><title>Spelling Bee puzzle sheet</title>
   <style>
-    @page{margin:12mm}
+    @page{size:A4; margin:12mm}
     *{box-sizing:border-box}
+    :root{--cols:3; --px:12px}
     body{font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
          color:#111; margin:0}
-    /* the grid gets the top half of the page — it's the puzzle, the blanks are
-       just the answer space */
-    .top{height:130mm; display:flex; flex-direction:column; align-items:center;
+    /* the grid gets the top half — it's the puzzle; the blanks are answer space */
+    .top{height:520px; display:flex; flex-direction:column; align-items:center;
          justify-content:center; gap:10px; border-bottom:2px solid #111}
     h1{font-size:17px; margin:0; font-weight:800}
     .meta{color:#666; font-size:11px; margin:0}
     .meta b{color:#111}
-    .cols{column-count:${COLS}; column-gap:${GAP}px; padding-top:12px}
+    .cols{column-count:var(--cols); column-gap:14px; padding-top:10px}
+    .grp{break-inside:avoid; margin:0 0 8px}
+    h3{margin:0 0 3px; font-size:calc(var(--px) * .92); font-weight:800;
+       letter-spacing:.04em; border-bottom:1px solid #ccc; padding-bottom:2px;
+       white-space:nowrap}
+    h3 span{color:#999; font-weight:600}
     .slot{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-          font-size:${slotPx}px; white-space:nowrap; padding:3px 0;
-          display:flex; align-items:baseline}
-    .n{margin-left:6px; font-size:9px; color:#999; font-family:inherit}
+          font-size:var(--px); white-space:nowrap; padding:3px 0}
   </style>
   <div class="top">
     <h1>Spelling Bee${date ? ' &middot; ' + date : ''}</h1>
@@ -1670,7 +1667,38 @@ function printableSheet(){
     <p class="meta"><b>${words.length}</b> words &middot; <b>${total}</b> points for all of them
        &middot; every word uses the centre letter, 4 letters or more</p>
   </div>
-  <div class="cols">${rows}</div>`;
+  <div class="cols">${blocks}</div>`;
+}
+
+/// Shrink the answer half until it actually fits beside the grid on page one.
+///
+/// Spilling onto a second page is the one thing this sheet must never do, and
+/// the only trustworthy way to know is to lay it out and measure. Prefers the
+/// largest readable type; adds columns only when it has to.
+function fitToOnePage(doc){
+  const cols = doc.querySelector('.cols');
+  if(!cols) return;
+  const AVAIL = 1032 - 520 - 20;        // A4 at 96dpi, less margins, less the grid half
+  const GAP = 14;
+  const root = doc.documentElement;
+  const slots = [...doc.querySelectorAll('.slot')];
+  // widest row, i.e. the longest word — it must fit its column, not just the page
+  const widest = () => slots.reduce((m, el) => Math.max(m, el.scrollWidth), 0);
+  let best = null;
+  for(let c = 2; c <= 6; c++){
+    root.style.setProperty('--cols', c);
+    for(let px = 12; px >= 5.5; px -= 0.25){
+      root.style.setProperty('--px', px + 'px');
+      const colW = (cols.clientWidth - (c - 1) * GAP) / c;
+      if(cols.scrollHeight <= AVAIL && widest() <= colW){
+        if(!best || px > best.px) best = {c, px};
+        break;                          // biggest type this column count allows
+      }
+    }
+  }
+  const pick = best || {c: 6, px: 5.5};  // nothing fit: cram rather than spill
+  root.style.setProperty('--cols', pick.c);
+  root.style.setProperty('--px', pick.px + 'px');
 }
 
 function doPrint(){
@@ -1685,7 +1713,7 @@ function doPrint(){
   const d = f.contentDocument;
   d.open(); d.write(printableSheet()); d.close();
   // let the SVG and fonts settle before the dialog snapshots the page
-  const go = ()=>{ f.contentWindow.focus(); f.contentWindow.print(); };
+  const go = ()=>{ fitToOnePage(d); f.contentWindow.focus(); f.contentWindow.print(); };
   if(d.readyState === 'complete') setTimeout(go, 120);
   else f.onload = ()=> setTimeout(go, 120);
 }
