@@ -1268,13 +1268,36 @@ function pushScore(){
     if(_pending){ _pending = false; pushScore(); }
   }, 600);
 }
+let _pushFailed = false;
+
 async function doPush(){
   if(!Net.live){ return; }
   if(_pushing){ _pending = true; return; }
   _pushing = true;
-  try{ await Net.upsert(); }
-  catch(e){ /* transient failure shouldn't break play */ }
+  try{
+    await Net.upsert();
+    _pushFailed = false;
+  }catch(e){
+    // A dropped write used to be swallowed and never retried, so those words
+    // lived in this browser and nowhere else — this score and the one everyone
+    // else saw drifted apart for good. Remember it and try again shortly.
+    _pushFailed = true;
+    setTimeout(()=>{ if(_pushFailed) doPush(); }, 4000);
+  }
   finally{ _pushing = false; }
+}
+
+/// Belt and braces: if the cloud has fewer of my words than this browser does,
+/// a push was lost at some point. Send it again.
+async function healIfBehind(){
+  if(!Net.live || _pushing) return;
+  try{
+    const sb = await Net.client();
+    const { data } = await sb.from(SUPABASE_TABLE)
+      .select('words').eq('room', Net.room).eq('player_id', PLAYER_ID).limit(1);
+    const theirs = (data && data[0] && data[0].words) || 0;
+    if(_pushFailed || theirs < G.found.length) await doPush();
+  }catch(e){ /* a failed check must never interrupt play */ }
 }
 
 /* ============================================================
@@ -2016,7 +2039,7 @@ setInterval(()=>{
 /* keep the "updated Xs ago" labels fresh on the scoreboard */
 setInterval(()=>{ if(!$('#game').classList.contains('hidden')) renderBoard(); }, 5000);
 /* live-sync safety net: re-pull the room in case a realtime event was missed */
-setInterval(()=>{ Net.refresh(); }, 3500);
+setInterval(()=>{ Net.refresh(); healIfBehind(); }, 3500);
 
 /* ---------- initial load ---------- */
 let joinRoute = null;   // pending invite route while the join dialog is open
