@@ -905,6 +905,7 @@ function layoutFlower(){
     [-dx, -dyDiag],     // upper-left
   ];
   const cells = [G.center, ...ordered];
+  const centres = [];                       // hex centre in flower coordinates
   cells.forEach((ch,i)=>{
     const d = document.createElement('div');
     d.className = 'hex' + (i===0 ? ' center' : '');
@@ -913,19 +914,44 @@ function layoutFlower(){
     d.style.height = HEXH + 'px';
     d.style.left = `calc(50% + ${positions[i][0]}px)`;
     d.style.top  = `calc(50% + ${positions[i][1]}px)`;
-    // pointerdown (not click) so fast taps — and repeated taps on the same
-    // letter, e.g. the double M/T in "committal" — each register immediately
-    // instead of being dropped or merged into a double-tap. preventDefault
-    // stops selection/zoom; we flash the press state manually since that
-    // suppresses :active.
-    d.addEventListener('pointerdown', (e)=>{
-      e.preventDefault();
-      addChar(ch);
-      d.classList.add('press');
-      setTimeout(()=> d.classList.remove('press'), 110);
-    });
+    d.style.pointerEvents = 'none';         // the container does the hit-testing
     flower.appendChild(d);
+    centres.push({ ch, el: d, x: positions[i][0], y: positions[i][1] });
   });
+
+  // ONE handler on the flower, picking the nearest hex centre.
+  //
+  // Each hex is a rectangle with a clip-path: the clip changes what you SEE,
+  // not what you can touch, so neighbouring rectangles overlapped and whichever
+  // sat later in the DOM swallowed taps meant for its neighbour. Touches went
+  // to the wrong letter, or seemed to vanish. Nearest-centre has no overlap and
+  // no gaps — every touch inside the flower lands on exactly one hex.
+  const R = HEXW * 0.52;                    // a little forgiving at the edges
+  const hexAt = (clientX, clientY) => {
+    const b = flower.getBoundingClientRect();
+    const x = clientX - b.left - b.width / 2;
+    const y = clientY - b.top - b.height / 2;
+    let best = null, bestD = Infinity;
+    for(const c of centres){
+      const d2 = (x - c.x) ** 2 + (y - c.y) ** 2;
+      if(d2 < bestD){ bestD = d2; best = c; }
+    }
+    return (best && bestD <= R * R) ? best : null;
+  };
+
+  const tap = (e) => {
+    const hit = hexAt(e.clientX, e.clientY);
+    if(!hit) return;
+    e.preventDefault();
+    addChar(hit.ch);
+    hit.el.classList.add('press');
+    setTimeout(()=> hit.el.classList.remove('press'), 110);
+  };
+
+  // pointerdown, not click: fast taps and repeated taps on the SAME letter
+  // (the double M/T in "committal") each register instead of being merged into
+  // a double-tap. Every pointer is handled, so two fingers both count.
+  flower.onpointerdown = tap;
 }
 function renderEntry(){
   const e = $('#entry');
