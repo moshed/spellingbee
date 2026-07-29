@@ -82,6 +82,32 @@ broad `an-array-of-english-words` → tiny offline `FALLBACK_WORDS`. Per-board v
 sets cached in localStorage (key `v3`; bump to invalidate). NYT's own list is
 proprietary/unobtainable and random puzzles can't be validated from a past-answer
 archive, so this is an approximation — to rebuild words.json see git history of
+
+### The daily prune (scripts/update-nyt.py)
+Each NYT day publishes its **complete** answer list, so a word buildable from
+that day's letters and absent from its answers is one NYT rejects — that's the
+prune, and it's authoritative. Two things it gets wrong if you're not careful:
+
+- **Sweep every day, not a recent window.** Words keep entering from later days'
+  answers, so a word rejected in 2023 could re-enter in 2026 and never be
+  re-examined. Full sweep of 1302 days takes ~20s.
+- **Some upstream days have incomplete answer lists**, and absence then reads as
+  rejection. 2024-11-28 lists `filching` but neither `filch`, `finch` nor
+  `flinch`; a naive full sweep deleted all three. NYT's dictionary is closed
+  under inflection, so **a day that accepts a word but not that word's base is
+  missing entries** — those days are skipped (8 of 1302).
+
+Anything NYT has *ever* accepted is protected, so a bad day can't delete a good
+word twice over. `--force` re-runs after a rule change instead of waiting for
+tomorrow's puzzle. `common-words.json` is useless as protection — it's a 46k
+alphabetical list that shelters proper nouns (all 137 of the last prune's
+removals were in it).
+
+Other NYT games are **not** usable as a dictionary source: Letter Boxed and
+Strands publish per-day valid-word lists, but they run much looser rulebooks —
+Letter Boxed accepts 227 words Bee explicitly rejects, Strands 239, and each
+overlaps ours only ~55%.
+
 the build step (SCOWL ∪ (an-array ∩ freq50k − british-only), a-z, len≥4).
 - `CNAME` — `spellingbee.dancykier.com`.
 - Repo: `moshed/spellingbee` (public, renamed from `games`). Game was originally on branch
