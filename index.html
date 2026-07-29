@@ -1493,6 +1493,9 @@ async function startGame(letters, center, roomId, opts={}){
 function pruneFound(){
   if(!_fullDict) return;   // only prune against the REAL dictionary, never a fallback list
   const before = G.found.length;
+  // One rulebook, applied to words already found as well as new ones: a word
+  // NYT rejects stops counting for everybody at once. The page fetches the
+  // dictionary on load, so this is judged against the current list.
   G.found = G.found.filter(w => G.valid.has(w));
   G.score = G.found.reduce((s,w)=> s + wordScore(w, G.letters).points, 0);
   if(G.found.length !== before){ renderFound(); renderBoard(); pushScore(); }  // sync corrected score
