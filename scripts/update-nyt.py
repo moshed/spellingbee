@@ -2,7 +2,7 @@
 """Fetch the daily NYT Spelling Bee dataset (Adidev-Panday/nyt-games), rebuild
 nyt-bee.json (per-day letters/center/answers), and union any new answer words
 into words.json. Run daily by .github/workflows/update-nyt.yml."""
-import json, os, urllib.request
+import json, os, sys, urllib.request
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
@@ -14,7 +14,9 @@ UPSTREAM = 'https://raw.githubusercontent.com/Adidev-Panday/nyt-games/main/data.
 
 def main():
     # Cheap no-op: if today's puzzle is already in, don't download the 31MB source.
-    if os.path.exists('nyt-bee.json'):
+    # --force re-runs anyway, which is how a dictionary-rule change gets applied
+    # to the whole archive instead of waiting for tomorrow's puzzle.
+    if os.path.exists('nyt-bee.json') and '--force' not in sys.argv:
         try:
             if TODAY in json.load(open('nyt-bee.json')):
                 print(f'Already have {TODAY}; nothing to do.')
@@ -52,15 +54,46 @@ def main():
     # which inflated a board's maximum and therefore its Genius target above NYT's.
     # Every word the protection was added for (yard, data, tidy, defund, unfound,
     # confound, dart, uncuffed) is in NYT's own answers, so it's fully covered.
+    # Sweep EVERY day, not just a recent window. The window assumed each day is
+    # checked while it's fresh, but words keep entering the dictionary from later
+    # days' answers, so a word NYT rejected in 2023 could be re-added in 2026 and
+    # never re-examined. A full sweep costs a few seconds and can't drift.
     protected = set(answers)
-    recent = sorted(bee.keys())[-30:]
+
+    def bases(w):
+        """Plausible base forms of an inflected answer."""
+        for suf, add in (('ing', ''), ('ing', 'e'), ('ed', ''), ('ed', 'e'),
+                         ('s', ''), ('es', '')):
+            if w.endswith(suf) and len(w) - len(suf) >= 3:
+                stem = w[:-len(suf)]
+                yield stem + add
+                if len(stem) > 3 and stem[-1] == stem[-2]:   # filling -> fill, not fil
+                    yield stem[:-1] + add
+
+    def incomplete(letters, c, ans):
+        """A day is only usable as evidence if its answer list is COMPLETE, and a
+        list that accepts a word but not that word's base is missing entries --
+        NYT's dictionary is closed under inflection, so the source is at fault,
+        not NYT. Caught 2024-11-28, which accepts 'filching' but lists neither
+        'filch' nor 'finch' nor 'flinch'; without this the prune ate all three.
+        Eight days out of 1302 fail this, and skipping them costs almost nothing
+        because a genuinely rejected word is nearly always rejected again."""
+        for w in ans:
+            for b in bases(w):
+                if (len(b) >= 4 and b not in ans and b in words
+                        and c in b and all(ch in letters for ch in b)):
+                    return True
+        return False
+
     remove = set()
-    for date in recent:
+    for date in sorted(bee.keys()):
         d = bee[date]
         letters, c, ans = set(d['l']), d['c'], set(d['a'])
         if len(letters) != 7 or c not in letters or len(ans) < 15:
             continue
         if not any(set(w) == letters for w in ans):   # sanity: must contain a pangram
+            continue
+        if incomplete(letters, c, ans):
             continue
         constructible = {w for w in words if len(w) >= 4 and c in w and all(ch in letters for ch in w)}
         remove |= (constructible - ans - protected)
