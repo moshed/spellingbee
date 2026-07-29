@@ -107,6 +107,12 @@
   .lbtrack .lblines{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible}
   /* faint grid marks at rounded score values */
   .lbtrack .gridline{position:absolute; top:2px; height:50px; width:1px; background:var(--line); opacity:.5; transform:translateX(-50%)}
+  /* every 50 reads as structure, every 10 only as spacing */
+  .lbtrack .gridline.major{opacity:.75}
+  .lbtrack .gridline.minor{height:12px; top:40px; opacity:.3}
+  /* NYT rankings on the way to Genius */
+  .lbtrack .leveldot{position:absolute; bottom:6px; width:4px; height:4px; border-radius:50%;
+                     background:var(--accent); opacity:.8; transform:translateX(-50%)}
   .lbtrack .gridlabel{position:absolute; top:56px; transform:translateX(-50%); font-size:9px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
   /* Genius milestone on the line, in yellow, label below */
   .lbtrack .gtick{position:absolute; top:2px; height:50px; width:1px; background:var(--accent); opacity:.9; transform:translateX(-50%); z-index:2}
@@ -140,6 +146,9 @@
   .words-head{width:100%; text-align:left; background:transparent; border:0; border-radius:0; color:var(--muted);
     display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; font-weight:600}
   .words-head #wordsLabel{display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden}
+  /* how long you've been on this board and how many words you've tried */
+  .words-head .playedstat{margin-left:auto; padding-left:8px; font-size:11px;
+                          color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
   .words-head .rw{text-transform:uppercase; color:var(--ink); font-weight:600; font-size:14px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .words-head .rw-more{color:var(--muted); font-size:12px; font-weight:700; flex:0 0 auto}
@@ -309,6 +318,7 @@
     <div class="words" id="wordsBox">
       <button class="words-head" id="wordsToggle" aria-expanded="false">
         <span id="wordsLabel">Your words …</span>
+        <span class="playedstat" id="playedStat"></span>
         <span class="chev">⌄</span>
       </button>
       <div class="words-body hidden" id="wordsBody">
@@ -597,6 +607,14 @@ async function fetchFullDict(){
 // live dictionary's SIZE, so any change to words.json auto-invalidates every
 // board's cached word set — no manual version bump, no "still rejected after
 // refresh" staleness. DICT_CACHE_VER only changes if the algorithm itself does.
+/// NYT's rankings as fractions of a board's maximum. Genius was the only rung
+/// the app marked, so the eight below it — the ones you actually pass on the
+/// way up — went unmarked and unannounced.
+const LEVELS = [
+  {name:'Good Start', pct:0.02}, {name:'Moving Up', pct:0.05}, {name:'Good', pct:0.08},
+  {name:'Solid', pct:0.15}, {name:'Nice', pct:0.25}, {name:'Great', pct:0.40},
+  {name:'Amazing', pct:0.50}, {name:'Genius', pct:0.70}, {name:'Queen Bee', pct:1.00},
+];
 const DICT_CACHE_VER = 'v5';
 async function computeValidWords(letters, center){
   const dict = await fetchFullDict();
@@ -725,6 +743,7 @@ const Net = {
     const row = { room:this.room, player_id:PLAYER_ID, name:(G.name||'Player'),
                   score:G.score, words:G.found.length, found:G.found,
                   letters:G.letters.join(''), center:G.center,
+                  seconds_played:(G.seconds|0), attempts:(G.attempts|0),
                   updated_at:new Date().toISOString() };
     const { error } = await sb.from(SUPABASE_TABLE).upsert(row, { onConflict:'room,player_id' });
     if(error) throw error;
@@ -826,7 +845,9 @@ const Net = {
   }
 };
 function rowToPlayer(r){
-  return { name:r.name, score:r.score||0, words:r.words||0, updated: r.updated_at ? Date.parse(r.updated_at) : now() };
+  return { name:r.name, score:r.score||0, words:r.words||0,
+           seconds:r.seconds_played||0, attempts:r.attempts||0,
+           updated: r.updated_at ? Date.parse(r.updated_at) : now() };
 }
 function randomRoom(){ return 'r' + Math.random().toString(36).slice(2,9) + Math.random().toString(36).slice(2,6); }
 
@@ -1055,12 +1076,31 @@ function renderBoard(){
   const ML = 0.10, MR = 0.88;                        // player/line region; max bubble sits past MR
   const xOf = (s)=> ML + (MR-ML) * Math.max(0, Math.min(1, (s - lo)/(hi - lo)));
 
-  // faint grid marks + rounded labels at each step inside (lo, hi)
-  for(let v = Math.ceil((lo+1)/step)*step; v < hi - step*0.25; v += step){
-    const gxl = xOf(v);
-    const line = document.createElement('span'); line.className='gridline'; line.style.left=(gxl*100)+'%'; track.appendChild(line);
-    const lab  = document.createElement('span'); lab.className='gridlabel'; lab.style.left=(gxl*100)+'%'; lab.textContent=Math.round(v); track.appendChild(lab);
+  // A ruler, not an even sprinkle: a faint tick every 10 points, a stronger
+  // labelled one every 50. The old "nice step" divided the range into four, so
+  // the same board could be marked in 5s one day and 25s the next and the
+  // spacing told you nothing.
+  for(let v = Math.ceil((lo+1)/10)*10; v < hi; v += 10){
+    const gxl = xOf(v), major = v % 50 === 0;
+    const line = document.createElement('span');
+    line.className = 'gridline' + (major ? ' major' : ' minor');
+    line.style.left = (gxl*100)+'%';
+    track.appendChild(line);
+    if(major){
+      const lab = document.createElement('span'); lab.className='gridlabel';
+      lab.style.left=(gxl*100)+'%'; lab.textContent=Math.round(v); track.appendChild(lab);
+    }
   }
+
+  // NYT's rankings as small dots. Genius keeps its own labelled marker; the
+  // rest are rungs you can see coming without crowding the axis with words.
+  LEVELS.filter(l => l.name !== 'Genius').forEach(l => {
+    const sc = Math.round(maxScore * l.pct);
+    if(sc <= lo || sc >= hi) return;
+    const d = document.createElement('span'); d.className='leveldot';
+    d.style.left = (xOf(sc)*100)+'%'; d.title = `${l.name} — ${sc}`;
+    track.appendChild(d);
+  });
 
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','lblines');
@@ -1125,7 +1165,9 @@ function renderBoard(){
     pin.style.zIndex = String(3 + i);
     const inits = g.ps.map(p => initials(p.name)).join(' ');
     pin.innerHTML = `<span class="pnum"><span class="ps">${g.score}</span><span class="pn">${escapeHtml(inits)}</span></span>`;
-    pin.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`).join('\n');
+    pin.title = g.ps.map(p => `${p.name||'Player'} — ${p.score||0} pts`
+                              + ((p.seconds|0)||(p.attempts|0)
+                                 ? ` (${fmtPlayed(p.seconds|0)}, ${p.attempts|0} tries)` : '')).join('\n');
     track.appendChild(pin);
   });
 
@@ -1162,7 +1204,7 @@ function renderBoard(){
     row.innerHTML =
       `<span style="width:30px;text-align:center;font-weight:700;color:var(--muted)">${place}</span>`+
       `<div class="who"><b class="${mine?'me':''}">${escapeHtml(p.name||'Player')}${mine?' (you)':''}</b>`+
-      `<small>${p.words||0} words · ${timeAgo(p.updated)}${diffTxt}</small></div>`+
+      `<small>${p.words||0} words${playedTxt(p)} · ${timeAgo(p.updated)}${diffTxt}</small></div>`+
       `<span class="pts ${mine?'me':''}">${p.score||0}</span>`;
     rows.appendChild(row);
   });
@@ -1225,10 +1267,52 @@ function flash(kind, msg){
   f.innerHTML = `<span class="msg ${kind==='ok'?'ok':'no'}">${msg}</span>`;
   clearTimeout(flash._t); flash._t = setTimeout(()=>{ f.innerHTML=''; }, 1400);
 }
+// Time spent on THIS board and words tried on it, kept per puzzle so it
+// survives a reload. The clock only runs while the tab is actually visible —
+// wall-clock since you opened the board would mostly measure a background tab.
+const Played = {
+  key(){ return 'hc_played_' + [...G.letters].sort().join('') + '_' + G.center; },
+  load(){
+    try{ const v = JSON.parse(localStorage.getItem(this.key())||'{}');
+         G.seconds = v.s|0; G.attempts = v.a|0; }
+    catch(e){ G.seconds = 0; G.attempts = 0; }
+  },
+  save(){
+    try{ localStorage.setItem(this.key(), JSON.stringify({s:G.seconds|0, a:G.attempts|0})); }catch(e){}
+  },
+  start(){
+    if(this._t) return;
+    this._t = setInterval(()=>{
+      if(document.hidden) return;
+      G.seconds = (G.seconds|0) + 1;
+      if(G.seconds % 20 === 0){ this.save(); pushScore(); }
+      renderPlayed();
+    }, 1000);
+  },
+};
+function fmtPlayed(sec){
+  const m = Math.floor((sec|0)/60);
+  if(m < 1) return (sec|0) + 's';
+  if(m < 60) return m + 'm';
+  return Math.floor(m/60) + 'h ' + (m%60) + 'm';
+}
+// Time on the board and words tried, for the standings row. Left off entirely
+// when a player has neither, so an untouched board reads clean.
+function playedTxt(p){
+  if(!(p.seconds|0) && !(p.attempts|0)) return '';
+  return ` · ${fmtPlayed(p.seconds|0)} · ${p.attempts|0} tries`;
+}
+function renderPlayed(){
+  const el = document.getElementById('playedStat');
+  if(el) el.textContent = fmtPlayed(G.seconds) + ' · ' + (G.attempts|0) + ' tries';
+}
+
 function submitWord(){
   const w = G.typed.toLowerCase();
   G.typed=''; renderEntry();
   if(!w) return;
+  // every word actually tried, landed or not
+  G.attempts = (G.attempts|0) + 1; Played.save(); renderPlayed();
   if(w.length < 4) return flash('no','Too short');
   if(!w.includes(G.center)) return flash('no','Missing center letter');
   for(const ch of w){ if(!G.letters.includes(ch)) return flash('no','Bad letters'); }
@@ -1241,6 +1325,7 @@ function submitWord(){
   flash('ok', (sc.pangram ? 'Pangram! ' : '') + '+' + sc.points);
   renderFound(); renderScore(); saveProgress(); pushScore();
   enqueueOvertakes(prevScore);        // buzz anyone we just went past
+  noteMilestones(prevScore);          // and tell them which rung we just cleared
 }
 
 /* Push a "X just passed you" alert to anyone this word overtook.
@@ -1255,6 +1340,37 @@ function puzLabel(){
     return el && el.textContent ? el.textContent.replace(/,.*$/, '') : '';
   }catch(e){ return ''; }
 }
+// Every rung crossed by this word, not just Genius. One word can vault more
+// than one ranking on a small board, so this walks the whole gap and announces
+// the highest reached — to you, and to everyone sharing the board.
+async function noteMilestones(prevScore){
+  if(!G.maxScore) return;
+  const passed = LEVELS.map(l => ({name:l.name, score:Math.round(G.maxScore*l.pct)}))
+                       .filter(l => l.score > prevScore && G.score >= l.score);
+  const top = passed[passed.length-1];
+  if(!top) return;
+  flash('ok', top.name === 'Queen Bee' ? 'Queen Bee — every single word!'
+                                       : `${top.name}! ${G.score} points`);
+  if(!Net.configured()) return;
+  const me = G.name || 'Someone';
+  try{
+    const sb = await Net.client();
+    for(const pid of Object.keys(G.players)){
+      if(pid === PLAYER_ID) continue;
+      await sb.from('wow_push_queue').insert({
+        to_player: pid, game: 'bee', kind: 'milestone',
+        title: `Hexicon${puzLabel() ? ' · ' + puzLabel() : ''}`,
+        body: `${me} reached ${top.name} — ${G.score} points.`,
+        dedup: `milestone-${PLAYER_ID}-${pid}-${top.name}`
+      });
+    }
+    fetch(SUPABASE_URL + '/functions/v1/wow-push', {
+      method:'POST', headers:{ 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
+      body:'{}'
+    }).catch(()=>{});
+  }catch(e){ /* never let a notification break play */ }
+}
+
 async function enqueueOvertakes(prevScore){
   if(!Net.configured()) return;
   const targets = Object.entries(G.players)
@@ -1282,7 +1398,8 @@ async function enqueueOvertakes(prevScore){
    Multiplayer sync
    ============================================================ */
 function myEntry(){
-  return {name:G.name||'Player', score:G.score, words:G.found.length, updated:now()};
+  return {name:G.name||'Player', score:G.score, words:G.found.length,
+          seconds:(G.seconds|0), attempts:(G.attempts|0), updated:now()};
 }
 // Coalesce rapid updates into at most one write in flight, with one queued.
 let _pushTimer = null, _pushing = false, _pending = false;
@@ -1483,6 +1600,7 @@ async function startGame(letters, center, roomId, opts={}){
   G.maxScore = maxScoreOf(G.valid, G.letters);
   $('#flash').innerHTML='';
   pruneFound();               // drop any previously-found words the clean dict now rejects
+  Played.load(); Played.start(); renderPlayed();
   renderScore();
   saveProgress();
   // If the full dictionary wasn't available yet we're on the tiny fallback list;
