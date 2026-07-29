@@ -2,9 +2,11 @@ name: Update NYT Spelling Bee data
 
 on:
   schedule:
-    # Every 10 min from ~7am–1pm ET. The script no-ops instantly once today's
+    # Every 10 min from 3am ET (when the NYT puzzle flips) to 1pm ET. Starting
+    # at 7am ET meant today's board simply did not exist in the app for the
+    # first four hours of the day. The script no-ops instantly once today's
     # puzzle is already in nyt-bee.json, so it just retries until it lands.
-    - cron: '*/10 11-17 * * *'
+    - cron: '*/10 7-17 * * *'
   workflow_dispatch:         # allow manual run from the Actions tab
 
 permissions:
