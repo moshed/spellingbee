@@ -2,11 +2,13 @@ name: Update NYT Spelling Bee data
 
 on:
   schedule:
-    # Every 10 min from 3am ET (when the NYT puzzle flips) to 1pm ET. Starting
-    # at 7am ET meant today's board simply did not exist in the app for the
-    # first four hours of the day. The script no-ops instantly once today's
-    # puzzle is already in nyt-bee.json, so it just retries until it lands.
-    - cron: '*/10 7-17 * * *'
+    # NYT flips the board at 3am ET, but the mirror we read only publishes it
+    # between roughly 09:39 and 11:32 UTC. So: start well before the earliest
+    # sighting and retry every 5 minutes until it lands. Two cheap exits keep
+    # that honest -- the script returns without any network once today is in
+    # nyt-bee.json, and a conditional GET makes a miss cost a few hundred bytes
+    # instead of re-downloading 31MB.
+    - cron: '*/5 8-17 * * *'
   workflow_dispatch:         # allow manual run from the Actions tab
 
 permissions:
@@ -27,7 +29,9 @@ jobs:
         run: |
           git config user.name "nyt-bee-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add nyt-bee.json words.json common-words.json
+          # the etag must persist across runs, or every fresh checkout
+          # starts with no cached tag and re-downloads the 31MB source
+          git add nyt-bee.json words.json common-words.json .nyt-upstream-etag
           if git diff --staged --quiet; then
             echo "No changes."
           else

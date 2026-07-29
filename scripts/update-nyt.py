@@ -2,7 +2,7 @@
 """Fetch the daily NYT Spelling Bee dataset (Adidev-Panday/nyt-games), rebuild
 nyt-bee.json (per-day letters/center/answers), and union any new answer words
 into words.json. Run daily by .github/workflows/update-nyt.yml."""
-import json, os, sys, urllib.request
+import json, os, sys, urllib.error, urllib.request
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
@@ -23,7 +23,25 @@ def main():
                 return
         except Exception:
             pass
-    data = json.load(urllib.request.urlopen(UPSTREAM, timeout=180))
+    # Second cheap exit: ask whether the 31MB source has changed at all before
+    # pulling it. Retrying every few minutes is only reasonable if a retry that
+    # finds nothing new costs a few hundred bytes rather than 31MB -- upstream
+    # publishes somewhere between 09:39 and 11:32 UTC, so most of the day's
+    # attempts are misses by design.
+    etag_path = '.nyt-upstream-etag'
+    req = urllib.request.Request(UPSTREAM)
+    if os.path.exists(etag_path) and os.path.exists('nyt-bee.json'):
+        req.add_header('If-None-Match', open(etag_path).read().strip())
+    try:
+        resp = urllib.request.urlopen(req, timeout=180)
+    except urllib.error.HTTPError as e:
+        if e.code == 304:
+            print('Upstream unchanged; nothing to do.')
+            return
+        raise
+    data = json.load(resp)
+    if resp.headers.get('ETag'):
+        open(etag_path, 'w').write(resp.headers['ETag'])
     bee = {}
     answers = set()
     for date, entry in data.items():
