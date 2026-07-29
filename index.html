@@ -65,7 +65,10 @@
   body.playing .wrap{overflow:hidden}
   header.top{display:flex; align-items:center; gap:12px; margin-bottom:8px}
   .logo{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.3px}
-  .logo .puzdate{color:var(--muted); font-weight:600; font-size:12px; letter-spacing:0; margin-left:-4px}
+  /* name on top, puzzle date beneath it in small type — matches the app's nav bar */
+  .logo .stack{display:flex; flex-direction:column; line-height:1.1}
+  .logo .puzdate{color:var(--muted); font-weight:600; font-size:11px; letter-spacing:0}
+  .logo .puzdate:empty{display:none}
   .logo .dot{width:20px;height:22px;background:var(--accent);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
   .logo small{font-weight:600;color:var(--muted)}
   .spacer{flex:1}
@@ -258,7 +261,7 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="logo"><span class="dot"></span> <span class="word">Hexicon</span><span class="puzdate" id="puzDate"></span></div>
+    <div class="logo"><span class="dot"></span> <span class="stack"><span class="word">Hexicon</span><span class="puzdate" id="puzDate"></span></span></div>
     <div class="spacer"></div>
     <div class="menuwrap">
       <button id="btnMenu" class="ghost" title="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
