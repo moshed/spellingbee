@@ -515,7 +515,27 @@ function adoptIdentityFromHash(){
   }catch(e){}
 }
 adoptIdentityFromHash();
-const PLAYER_ID = getPlayerId();
+let PLAYER_ID = getPlayerId();
+
+// Adopt the id this one has been merged into, if the server says there is one.
+//
+// Playing here and then installing the app leaves you with two identities and no
+// way to notice. Merging the rows server-side isn't enough by itself: the id
+// lives in this browser's localStorage, so it would just carry on writing the
+// old one. This is how a merge reaches a client — the server records that A is
+// now B, and anything still calling itself A quietly becomes B.
+async function adoptCanonicalId(){
+  try{
+    const sb = await Net.client();
+    if(!sb) return;
+    const { data } = await sb.rpc('wow_canonical_id', { p_id: PLAYER_ID });
+    const canonical = Array.isArray(data) ? data[0] : data;
+    if(canonical && canonical !== PLAYER_ID){
+      localStorage.setItem('hc_playerId', canonical);
+      PLAYER_ID = canonical;
+    }
+  }catch(e){ /* a merge that can't be checked is just a merge that waits */ }
+}
 
 /* ============================================================
    Dictionary
@@ -1551,6 +1571,9 @@ async function startGame(letters, center, roomId, opts={}){
     Net.room = wantRoom;                 // keep the id even if the connection fails
     if(Net.configured()){
       try{
+        // before anything is written under this id, find out whether it has
+        // been merged into another one
+        await adoptCanonicalId();
         await Net.join(wantRoom);        // load others
         await Net.pullMine();            // resume our own words if a newer copy is in the cloud
         await Net.upsert();              // announce ourselves
