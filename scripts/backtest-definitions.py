@@ -1,171 +1,137 @@
 #!/usr/bin/env python3
-"""Back-test the definition pipeline without anyone playing a board.
+"""Back-test the define-to-score marker, with nobody playing.
 
-The pipeline, in order:
-  1. is the word rare enough to be worth defining at all?   (wordfreq Zipf)
-  2. does Apple's dictionary have it?                       -> use that, stop
-  3. otherwise ask wow-define, which asks Grok              -> structured JSON
-  4. mark our stored definition against Grok's, and only
-     accept above a confidence threshold
+The mechanic: find a rare word, and the points are held until you say what it
+means. This checks the marker would behave, using simulated player answers so it
+can run before anyone types anything.
 
-Steps 1 and 2 run locally. Step 3 goes through the edge function so the key
-stays a server-side secret.
+Four kinds of answer are sent for each word:
 
-    python3 scripts/backtest-definitions.py --board          # the last board played
-    python3 scripts/backtest-definitions.py --gaps           # all 183 in definitions.json
-    python3 scripts/backtest-definitions.py --gaps --limit 20
-    python3 scripts/backtest-definitions.py --control        # planted wrong definitions
+  good    a correct definition, loosely worded  -> must be AWARDED
+  vague   right area, wrong sense               -> either way, but recorded
+  wrong   a definition of a DIFFERENT word      -> must be REFUSED
+  blank   nothing at all                        -> must be REFUSED
 
---control is the one that proves the grader works. Marking only correct
-definitions tells you nothing: a grader that says "match" to everything scores
-100%. It feeds Grok deliberately wrong definitions and fails the run if they
-aren't caught.
+`wrong` and `blank` are the ones that matter. A marker that awards everything
+scores 100% on correct answers alone, so a run that only sends good answers
+proves nothing. The exit code fails on any false positive.
+
+    export SB_ANON_KEY=...
+    python3 scripts/backtest-definitions.py --board board_words.json
+    python3 scripts/backtest-definitions.py --sample 12
 """
-import argparse, ctypes, ctypes.util, json, os, pathlib, random, sys, urllib.request
-from ctypes import c_void_p, c_char_p, c_long, Structure
+import argparse, json, os, pathlib, random, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FN = "https://atqhfbaurrmivjarowco.supabase.co/functions/v1/wow-define"
-
-# Rarity below which a word is worth offering a definition for. 2.5 puts it at
-# roughly "most people would not use this word" -- on a real board it selected
-# 3 words out of 26, which is the point: defining `then` and `enough` is noise.
 RARE_BELOW = 2.5
 
-# ---------- Apple's dictionary (same corpus the app reads on the phone) -------
-cf = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
-ds = ctypes.CDLL("/System/Library/Frameworks/CoreServices.framework/CoreServices")
 
-
-class CFRange(Structure):
-    _fields_ = [("location", c_long), ("length", c_long)]
-
-
-cf.CFStringCreateWithCString.restype = c_void_p
-cf.CFStringCreateWithCString.argtypes = [c_void_p, c_char_p, ctypes.c_uint32]
-cf.CFRelease.argtypes = [c_void_p]
-cf.CFStringGetLength.restype = c_long
-cf.CFStringGetLength.argtypes = [c_void_p]
-ds.DCSCopyTextDefinition.restype = c_void_p
-ds.DCSCopyTextDefinition.argtypes = [c_void_p, c_void_p, CFRange]
-
-
-def apple_defines(word):
-    s = cf.CFStringCreateWithCString(None, word.encode(), 0x08000100)
-    try:
-        d = ds.DCSCopyTextDefinition(None, s, CFRange(0, cf.CFStringGetLength(s)))
-        if d:
-            cf.CFRelease(d)
-            return True
-        return False
-    finally:
-        cf.CFRelease(s)
-
-
-# ---------- the edge function -------------------------------------------------
-def ask(word, candidate, anon):
-    payload = json.dumps({"word": word, "candidate": candidate}).encode()
-    req = urllib.request.Request(FN, data=payload, headers={
-        "Content-Type": "application/json",
-        "apikey": anon,
-        "Authorization": f"Bearer {anon}",
-    })
+def ask(word, answer, reference, anon):
+    payload = {"word": word, "answer": answer}
+    if reference:
+        payload["reference"] = reference
+    req = urllib.request.Request(FN, data=json.dumps(payload).encode(), headers={
+        "Content-Type": "application/json", "apikey": anon,
+        "Authorization": f"Bearer {anon}"})
     try:
         with urllib.request.urlopen(req, timeout=90) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
-        return {"error": f"HTTP {e.code}", "detail": e.read().decode()[:300]}
+        return {"error": f"HTTP {e.code}", "detail": e.read().decode()[:200]}
     except Exception as e:
-        return {"error": type(e).__name__, "detail": str(e)[:300]}
+        return {"error": type(e).__name__, "detail": str(e)[:200]}
+
+
+def loosen(definition):
+    """Approximate how a player types: the gist, lowercase, no full stop."""
+    d = definition.split(";")[0].split(",")[0].strip().rstrip(".")
+    return d[0].lower() + d[1:] if d else d
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--board", action="store_true", help="the last board played")
-    ap.add_argument("--gaps", action="store_true", help="every word in definitions.json")
-    ap.add_argument("--control", action="store_true", help="plant wrong definitions and check they're caught")
-    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--board", help="JSON array of words from a played board")
+    ap.add_argument("--sample", type=int, default=0, help="N random words from definitions.json")
     args = ap.parse_args()
 
     anon = os.environ.get("SB_ANON_KEY", "")
     if not anon:
-        sys.exit("set SB_ANON_KEY (the Misc project anon key) first")
+        sys.exit("set SB_ANON_KEY first")
 
     from wordfreq import zipf_frequency as z
     ours = json.loads((ROOT / "definitions.json").read_text())
+    rng = random.Random(11)
 
     if args.board:
-        words = json.loads(pathlib.Path("board_words.json").read_text())
-    elif args.gaps or args.control:
-        words = sorted(ours)
+        words = json.loads(pathlib.Path(args.board).read_text())
+        rare = [w for w in words if z(w, "en") < RARE_BELOW]
+        print(f"{len(words)} words on the board, {len(rare)} rare enough to challenge:")
+        print("  " + "  ".join(rare) + "\n")
+        # the board's rare words mostly aren't in definitions.json (Apple has
+        # them), so there's no stored reference -- the model supplies its own
+        subjects = [(w, ours.get(w)) for w in rare]
+    elif args.sample:
+        picks = rng.sample(sorted(ours), min(args.sample, len(ours)))
+        subjects = [(w, ours[w]) for w in picks]
     else:
-        sys.exit("pick --board, --gaps or --control")
+        sys.exit("pick --board or --sample")
 
-    if args.limit:
-        words = words[:args.limit]
-
-    # ---- steps 1 and 2, local and free -------------------------------------
-    triage = []
-    for w in words:
-        zipf = z(w, "en")
-        triage.append({
-            "word": w,
-            "zipf": zipf,
-            "rare": zipf < RARE_BELOW,
-            "apple": apple_defines(w),
-        })
-
-    rare = [t for t in triage if t["rare"]]
-    need_fallback = [t for t in rare if not t["apple"]]
-    print(f"{len(words)} words")
-    print(f"  rare enough to define (Zipf < {RARE_BELOW}): {len(rare)}")
-    print(f"  ...of those, Apple already has:             {len(rare) - len(need_fallback)}")
-    print(f"  ...needing the Grok fallback:               {len(need_fallback)}\n")
-
-    # ---- step 3 and 4, through the edge function ---------------------------
-    # In control mode every word is sent with a definition belonging to a
-    # DIFFERENT word. Anything the grader calls a match is a false positive, and
-    # a grader that can't fail is not a grader.
-    rng = random.Random(7)
-    checks = need_fallback if not args.control else triage
-    if not checks:
-        print("nothing to send")
+    if not subjects:
+        print("nothing to test")
         return
 
-    stats = {"match": 0, "partial": 0, "mismatch": 0, "not_a_word": 0,
-             "no_candidate": 0, "error": 0, "unusable": 0}
-    misses = []
-    for t in checks:
-        w = t["word"]
-        if args.control:
-            other = rng.choice([x for x in ours if x != w])
-            candidate = ours[other]
-        else:
-            candidate = ours.get(w, "")
+    tally = {"good_awarded": 0, "good_refused": 0,
+             "wrong_awarded": 0, "wrong_refused": 0,
+             "blank_awarded": 0, "blank_refused": 0,
+             "vague_awarded": 0, "vague_refused": 0, "errors": 0}
+    false_positives = []
 
-        r = ask(w, candidate, anon)
-        if "error" in r:
-            stats["error"] += 1
-            print(f"  {w:<14} ERROR {r['error']} {r.get('detail','')[:120]}")
-            continue
-        stats[r["verdict"]] = stats.get(r["verdict"], 0) + 1
-        if not r.get("usable"):
-            stats["unusable"] += 1
-        flag = ""
-        if args.control and r["verdict"] == "match":
-            flag = "  <-- FALSE POSITIVE"
-            misses.append(w)
-        print(f"  {w:<14} conf={r['confidence']:.2f} agree={r['agreement']:.2f} "
-              f"{r['verdict']:<11}{flag}")
-        if r.get("note"):
-            print(f"      note: {r['note']}")
+    for word, ref in subjects:
+        # A correct answer needs SOME source of truth. Where we have no stored
+        # definition, ask the marker for its own first and paraphrase that --
+        # otherwise "good" would just be a guess and the test would be measuring
+        # my guess, not the marker.
+        seed = ref
+        if not seed:
+            probe = ask(word, "", None, anon)
+            seed = probe.get("reference", "") if "error" not in probe else ""
 
-    print("\n" + json.dumps(stats, indent=1))
-    if args.control:
-        if misses:
-            print(f"\nFAIL: grader accepted {len(misses)} wrong definitions: {misses}")
-            sys.exit(1)
-        print("\nPASS: every planted wrong definition was caught")
+        other = ours[rng.choice([k for k in ours if k != word])]
+        cases = [("good", loosen(seed) if seed else None),
+                 ("vague", "something to do with " + word[:4] if seed else None),
+                 ("wrong", other),
+                 ("blank", "")]
+
+        print(f"{word}")
+        for kind, answer in cases:
+            if answer is None:
+                print(f"    {kind:<6} skipped (no reference available)")
+                continue
+            r = ask(word, answer, ref, anon)
+            if "error" in r:
+                tally["errors"] += 1
+                print(f"    {kind:<6} ERROR {r['error']} {r.get('detail','')[:100]}")
+                continue
+            awarded = bool(r.get("awarded"))
+            tally[f"{kind}_{'awarded' if awarded else 'refused'}"] += 1
+            flag = ""
+            if kind in ("wrong", "blank") and awarded and r.get("verdict") != "unmarked":
+                flag = "   <-- FALSE POSITIVE"
+                false_positives.append((word, kind))
+            if kind == "good" and not awarded:
+                flag = "   <-- false negative"
+            print(f"    {kind:<6} score={r.get('score', 0):.2f} "
+                  f"{r.get('verdict','?'):<12}{'AWARDED' if awarded else 'refused':<8}{flag}")
+
+    print("\n" + json.dumps(tally, indent=1))
+    if false_positives:
+        print(f"\nFAIL: {len(false_positives)} wrong/blank answers were awarded: {false_positives}")
+        sys.exit(1)
+    if tally["errors"]:
+        print("\nINCONCLUSIVE: errors occurred; a clean run is needed before trusting this")
+        sys.exit(2)
+    print("\nPASS: no wrong or blank answer earned points")
 
 
 if __name__ == "__main__":
