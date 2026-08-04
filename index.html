@@ -520,12 +520,18 @@ function getPlayerId(){
 // A "continue on another device" link carries our identity (&me) and name (&n).
 // Adopt them BEFORE the id is read, so this device resumes as the same player
 // and can pull its own saved progress back from the cloud. Seamless handoff.
+function validPlayerId(v){
+  return typeof v === 'string' && /^p_[a-z0-9]+_\d+$/.test(v);
+}
 function adoptIdentityFromHash(){
   try{
     const h = location.hash.replace(/^#/,'');
     if(!h) return;
     const p = new URLSearchParams(h);
-    const me = p.get('me'); if(me) localStorage.setItem('hc_playerId', me);
+    // Validated: this writes straight into the identity slot, so a malformed
+    // &me would corrupt the browser exactly the way the canonical-id bug did.
+    const me = p.get('me');
+    if(me && validPlayerId(me)) localStorage.setItem('hc_playerId', me);
     const n  = p.get('n');  if(n)  localStorage.setItem('hc_name', n);
   }catch(e){}
 }
@@ -539,9 +545,6 @@ let PLAYER_ID = getPlayerId();
 // lives in this browser's localStorage, so it would just carry on writing the
 // old one. This is how a merge reaches a client — the server records that A is
 // now B, and anything still calling itself A quietly becomes B.
-function validPlayerId(v){
-  return typeof v === 'string' && /^p_[a-z0-9]+_\d+$/.test(v);
-}
 async function adoptCanonicalId(){
   try{
     const sb = await Net.client();
