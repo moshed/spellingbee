@@ -2248,8 +2248,12 @@ let joinRoute = null;   // pending invite route while the join dialog is open
     // has ANY saved progress for this board (we've opened it before), resume
     // silently — no dialog. A handoff link (&me) also resumes directly. The
     // join dialog is ONLY for a brand-new invite link we've never opened.
+    // ...and if we already know who you are, there is nothing to ask. The
+    // dialog exists to stop a stranger being announced as "Player"; a browser
+    // that already has a name has answered that question, and being asked it
+    // again on every new board reads as the site forgetting you.
     const prevHere = loadProgress(sig);
-    if(route.me || prevHere){
+    if(route.me || prevHere || savedName){
       startGame(route.letters, route.center, route.room);
     }else{
       joinRoute = route;
