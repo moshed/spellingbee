@@ -499,7 +499,13 @@ function fmtClock(ms){
 /* ---------- stable per-browser identity ---------- */
 function getPlayerId(){
   let id = localStorage.getItem('hc_playerId');
-  if(!id){ id = 'p_' + Math.random().toString(36).slice(2,10) + '_' + (now()%100000); localStorage.setItem('hc_playerId', id); }
+  /* A stored id that isn't a real id is worse than none: it silently splits you
+     from your own games. "[object Object]" got written here by a bug in the
+     canonical-id adoption, so anything malformed is discarded and reissued. */
+  if(!validPlayerId(id)){
+    id = 'p_' + Math.random().toString(36).slice(2,10) + '_' + (now()%100000);
+    localStorage.setItem('hc_playerId', id);
+  }
   return id;
 }
 // A "continue on another device" link carries our identity (&me) and name (&n).
@@ -524,13 +530,23 @@ let PLAYER_ID = getPlayerId();
 // lives in this browser's localStorage, so it would just carry on writing the
 // old one. This is how a merge reaches a client — the server records that A is
 // now B, and anything still calling itself A quietly becomes B.
+function validPlayerId(v){
+  return typeof v === 'string' && /^p_[a-z0-9]+_\d+$/.test(v);
+}
 async function adoptCanonicalId(){
   try{
     const sb = await Net.client();
     if(!sb) return;
     const { data } = await sb.rpc('wow_canonical_id', { p_id: PLAYER_ID });
-    const canonical = Array.isArray(data) ? data[0] : data;
-    if(canonical && canonical !== PLAYER_ID){
+    /* The RPC returns `table(canonical_id text)`, so a row is an OBJECT.
+       Taking data[0] whole stored "[object Object]" as the player id, wrote
+       scores under it, and then fed that back through the RPC next load —
+       which is how ids like {"canonical_id":"p_..."} ended up in the table and
+       how a browser lost its identity. Pull the field out, and never accept
+       anything that isn't a real id. */
+    const row = Array.isArray(data) ? data[0] : data;
+    const canonical = typeof row === 'string' ? row : (row && row.canonical_id);
+    if(validPlayerId(canonical) && canonical !== PLAYER_ID){
       localStorage.setItem('hc_playerId', canonical);
       PLAYER_ID = canonical;
     }
