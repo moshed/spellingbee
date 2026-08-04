@@ -1994,6 +1994,16 @@ $('#useIdBtn').addEventListener('click', ()=>{
   if(!id) return;
   if(!/^[\w-]{4,64}$/.test(id)){ toast("That doesn't look like a valid ID."); return; }
   if(id === PLAYER_ID){ $('#idDlg').close(); return; }
+  /* Record it server-side first. Swapping localStorage alone links only THIS
+     browser: the phone carries on as itself, and everything played under the id
+     being left behind is stranded. The alias is what every client checks on
+     launch, so writing it is what makes the link work in both directions. */
+  (async () => {
+    try {
+      const sb = await Net.client();
+      if(sb) await sb.rpc('wow_link_identity', { p_old: PLAYER_ID, p_new: id });
+    } catch(e){ /* offline: the local switch still happens, the alias can wait */ }
+  })();
   localStorage.setItem('hc_playerId', id);
   // reload as that player: into the current board if playing (pullMine restores
   // it), otherwise to the home screen where the cloud resume list will load
