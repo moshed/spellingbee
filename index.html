@@ -500,10 +500,19 @@ function fmtClock(ms){
 function getPlayerId(){
   let id = localStorage.getItem('hc_playerId');
   /* A stored id that isn't a real id is worse than none: it silently splits you
-     from your own games. "[object Object]" got written here by a bug in the
-     canonical-id adoption, so anything malformed is discarded and reissued. */
+     from your own games. The canonical-id bug wrote objects here, which
+     localStorage coerced to strings like {"canonical_id":"p_abc_123"} and then
+     "[object Object]".
+     Try to dig the real id back out before giving up — minting a fresh one
+     loses the account, and in most cases the original is sitting right there in
+     the string. Only when there's nothing to recover do we issue a new one. */
   if(!validPlayerId(id)){
-    id = 'p_' + Math.random().toString(36).slice(2,10) + '_' + (now()%100000);
+    const buried = typeof id === 'string' && id.match(/p_[a-z0-9]+_\d+/);
+    if(buried && validPlayerId(buried[0])){
+      id = buried[0];
+    }else{
+      id = 'p_' + Math.random().toString(36).slice(2,10) + '_' + (now()%100000);
+    }
     localStorage.setItem('hc_playerId', id);
   }
   return id;
