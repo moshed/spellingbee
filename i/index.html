@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>You're invited — World of Words</title>
 <meta name="theme-color" content="#f7da21">
+<!-- Safari draws its own install banner from this, above the page, on iOS.
+     Costs nothing and disappears by itself once the app is installed. -->
+<meta name="apple-itunes-app" content="app-id=6794445086">
 <meta property="og:title" content="Join my game">
 <meta property="og:description" content="Spelling Bee, Anagrams and Boggle — play in your browser, no sign-up.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23141414'/><polygon points='50,16 78,33 78,67 50,84 22,67 22,33' fill='%23f7da21'/></svg>">
@@ -30,6 +33,7 @@
     padding:15px 20px;border-radius:999px}
   a.play{background:var(--accent);color:#141414}
   a.app{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  a.get{background:#141414;color:#fff}
   .muted-sm{font-size:12px;color:var(--muted)}
 </style>
 </head>
@@ -39,6 +43,8 @@
   <p id="blurb"></p>
   <a class="btn play" id="play" href="#">Play in the browser</a>
   <a class="btn app" id="app" href="#">Open in the app</a>
+  <a class="btn get" id="get" href="https://apps.apple.com/us/app/id6794445086" hidden>
+    Get Wordbox — free on the App Store</a>
   <p class="muted-sm">Free, no sign-up. Scores update live for everyone playing.</p>
 
 <script>
@@ -97,7 +103,47 @@ const appBtn = document.getElementById('app');
 const deep = new URLSearchParams({ g: game, r: room });
 if (letters) deep.set('l', letters);
 if (center) deep.set('c', center);
-appBtn.href = 'worldofwords://join?' + deep.toString();
+const appUrl = 'worldofwords://join?' + deep.toString();
+appBtn.href = appUrl;
+
+// Have the app? Open it. Don't? Offer it.
+//
+// A custom scheme fails SILENTLY when nothing is registered to handle it —
+// the tap simply does nothing, which reads as a broken page. There is no way
+// to ask iOS whether an app is installed, so the only test is to try: if the
+// page is still in front a moment later, it isn't there.
+//
+// A universal link already opens the app straight from Messages when it is
+// installed; this covers the case where somebody lands on the page anyway —
+// an in-app browser, a copied link, a second tap.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const getBtn = document.getElementById('get');
+
+function offerInstall() {
+  // Only once, and never while the app is opening: leaving the page cancels it.
+  if (document.visibilityState === 'hidden') return;
+  getBtn.hidden = false;
+}
+
+if (isIOS) {
+  let fired = false;
+  const tryApp = () => {
+    if (fired) return;
+    fired = true;
+    // A hidden iframe rather than location: a failed scheme in the address bar
+    // shows an error dialog on some iOS versions, and this does not.
+    const f = document.createElement('iframe');
+    f.style.display = 'none';
+    f.src = appUrl;
+    document.body.appendChild(f);
+    setTimeout(offerInstall, 1400);
+  };
+  // The page decides for itself on arrival, and the button still works if the
+  // automatic attempt was blocked.
+  window.addEventListener('pageshow', tryApp, { once: true });
+  appBtn.addEventListener('click', (e) => { e.preventDefault(); fired = false; tryApp(); });
+}
 </script>
 </body>
 </html>
