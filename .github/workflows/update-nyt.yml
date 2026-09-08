@@ -26,6 +26,7 @@ jobs:
       - name: Fetch + merge NYT data
         run: python3 scripts/update-nyt.py
       - name: Commit if changed
+        id: commit
         run: |
           git config user.name "nyt-bee-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -34,8 +35,22 @@ jobs:
           git add nyt-bee.json words.json common-words.json .nyt-upstream-etag
           if git diff --staged --quiet; then
             echo "No changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore: daily NYT Spelling Bee data update"
             git pull --rebase --autostash origin main || true
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # The site is hosted on Cloudflare Pages as a direct upload, so a commit
+      # alone does not publish anything. Push the files up after a data change.
+      - name: Publish to Cloudflare Pages
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          rm -f CLAUDE.md CLAUDE-*.md
+          npx --yes wrangler@4 pages deploy . \
+            --project-name spellingbee --branch main --commit-dirty=true
